@@ -10,6 +10,7 @@
 <header class="topbar">
   <div class="brand"><div class="logo">C</div><div><h1>Card City <span style="color:var(--green)">/</span> <span data-version></span></h1></div></div>
   <div class="top-actions">
+    <button id="noticeBtn" title="檢視公告與教學">📢 遊戲公告</button>
     <button class="subtle" id="helpBtn" title="快速鍵說明">⌨️ 快速鍵 <kbd>?</kbd></button>
     <button class="subtle" id="soundBtn">🔊 音效: 開</button>
     <button class="subtle" id="saveBtn">儲存</button>
@@ -151,6 +152,79 @@
   <div class="shortcut-list" id="shortcutList"></div>
   <div class="action-row"><button class="primary" id="shortcutModalClose">關閉 <kbd>Esc</kbd></button></div>
 </div></div>
+
+<!-- 公告 / 新手教學與更新日誌彈窗 -->
+<div class="modal-backdrop" id="noticeModalBackdrop">
+  <div class="modal" style="max-width: 600px; width: 90%;">
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:15px;">
+      <h2 id="noticeModalTitle" style="margin:0; color:var(--gold);">📢 遊戲公告</h2>
+      <button class="icon-btn" id="noticeModalClose" style="font-size:18px;">✕</button>
+    </div>
+
+    <!-- 分頁按鈕 -->
+    <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:1px solid var(--line); padding-bottom:8px;">
+      <button class="notice-tab-btn active" id="noticeTabTutorialBtn" style="padding:4px 12px; font-size:12px;">📖 新手教學</button>
+      <button class="notice-tab-btn" id="noticeTabChangelogBtn" style="padding:4px 12px; font-size:12px;">📜 更新日誌</button>
+    </div>
+
+    <!-- 分頁內容 1：新手教學 -->
+    <div id="noticeTabTutorial" class="notice-tab-content" style="max-height: 360px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--text);">
+      <h3 style="color:var(--gold); margin-top:0;">歡迎來到 Card City 卡牌城市！</h3>
+      <p>這是一款結合卡牌抽牌與動態網格建設的模擬策略遊戲。你的目標是在 <b>30 回合</b> 內，將城市發展成繁榮的文明！</p>
+      
+      <hr style="border:none; border-top:1px solid var(--line); margin:12px 0;">
+      
+      <h4 style="color:var(--green); margin:8px 0;">1. 基礎建造與人口</h4>
+      <ul>
+        <li><b>金幣 (◈)</b>：建造建築與升級的主要資金。</li>
+        <li><b>可用人口 (👤)</b>：許多建築需要消耗勞動力（如農田需要 1 人口）。若人口不足，請先建造<b>「住宅」</b>來增加人口上限！</li>
+      </ul>
+
+      <h4 style="color:var(--green); margin:8px 0;">2. 糧食與人口防衛</h4>
+      <ul>
+        <li>每回合結束時，城市會產出糧食並消耗等同於<b>最大人口數</b>的糧食。</li>
+        <li>若糧食不足，將會消耗<b>存糧</b>；若連存糧也歸零，將會導致<b>人口流失</b>！</li>
+      </ul>
+
+      <h4 style="color:var(--green); margin:8px 0;">3. 奇蹟商店與鎖定 (📌)</h4>
+      <ul>
+        <li><b>信仰點 (⛪)</b>：可用於在商店祈求強力的主動奇蹟（如豐收祈福、人口增長）。</li>
+        <li>每回合開始時手牌與商店會重置，善用卡牌上的 <b>🔒 鎖定按鈕</b> 可以保留你想要留到下回合的卡牌或奇蹟！</li>
+      </ul>
+
+      <h4 style="color:var(--green); margin:8px 0;">4. 科技、文化與任務</h4>
+      <ul>
+        <li>累積<b>科技點 (🔬)</b> 與 <b>文化點 (🎭)</b> 可在專屬分頁研發強力的被動效果與解鎖新建築。</li>
+        <li>隨時留意<b>任務目標</b>，達成後可領取大量金幣獎勵！</li>
+      </ul>
+    </div>
+
+    <!-- 分頁內容 2：更新日誌 -->
+    <div id="noticeTabChangelog" class="notice-tab-content" style="display:none; max-height: 360px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--text);">
+      <div style="margin-bottom:15px;">
+        <strong style="color:var(--gold);">v0.11 (目前版本)</strong> <small style="color:var(--muted);"> - 2026-10</small>
+        <ul style="margin:5px 0; padding-left:20px;">
+          <li>新增「公告與新手流程教學」系統。</li>
+          <li>新增「手牌與商店鎖定 (Lock)」機制。</li>
+          <li>將卡牌市場重構為「信仰奇蹟商店」，新增多種主動效果。</li>
+          <li>新增棋盤格「選取高亮」與空白地形資訊卡片。</li>
+          <li>優化每過 5 回合觸發一次的隨機城市事件。</li>
+        </ul>
+      </div>
+      <div>
+        <strong style="color:var(--gold);">v0.10</strong>
+        <ul style="margin:5px 0; padding-left:20px;">
+          <li>完成模組化架構重構（拆分 config, state, game, render, trees）。</li>
+          <li>新增雙樹系統（科技樹與文化樹）。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="action-row" style="justify-content: center; margin-top: 15px;">
+      <button class="primary" id="noticeModalConfirmBtn">開始建設城市！</button>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="./js/main.js"></script>
 </body>

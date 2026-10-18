@@ -413,3 +413,44 @@ if(configProblems.length){
   console.error(`設定有 ${configProblems.length} 個問題：\n` + configProblems.join('\n'));
   message(`⚠ 建築 / 科技設定有 ${configProblems.length} 個問題，請按 F12 開啟主控台查看詳情。`, true);
 }
+// ===== 公告與新手教學邏輯 =====
+
+// 開啟公告彈窗
+function openNoticeModal() {
+  $('noticeModalBackdrop').classList.add('show');
+}
+
+// 切換公告裡的分頁（新手教學 / 更新日誌）
+function switchNoticeTab(tabName) {
+  if (tabName === 'tutorial') {
+    $('noticeTabTutorial').style.display = 'block';
+    $('noticeTabChangelog').style.display = 'none';
+    $('noticeTabTutorialBtn').classList.add('active');
+    $('noticeTabChangelogBtn').classList.remove('active');
+  } else {
+    $('noticeTabTutorial').style.display = 'none';
+    $('noticeTabChangelog').style.display = 'block';
+    $('noticeTabTutorialBtn').classList.remove('active');
+    $('noticeTabChangelogBtn').classList.add('active');
+  }
+}
+
+// 檢查是否為首次遊玩，如果是則自動彈出
+function checkFirstTimePlayer() {
+  const hasSeenNotice = localStorage.getItem('hasSeenCardCityNoticeV1');
+  if (!hasSeenNotice) {
+    openNoticeModal();
+    localStorage.setItem('hasSeenCardCityNoticeV1', 'true');
+  }
+}
+
+// 事件綁定
+$('noticeBtn').addEventListener('click', openNoticeModal);
+$('noticeModalClose').addEventListener('click', () => $('noticeModalBackdrop').classList.remove('show'));
+$('noticeModalConfirmBtn').addEventListener('click', () => $('noticeModalBackdrop').classList.remove('show'));
+
+$('noticeTabTutorialBtn').addEventListener('click', () => switchNoticeTab('tutorial'));
+$('noticeTabChangelogBtn').addEventListener('click', () => switchNoticeTab('changelog'));
+
+// 在遊戲初始化後呼叫檢查
+checkFirstTimePlayer();
