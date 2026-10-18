@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Card City｜卡牌城市建造</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><div class="logo">C</div><div><h1>Card City <span style="color:var(--green)">/</span> <span data-version></span></h1></div></div>
+  <div class="top-actions">
+    <button class="subtle" id="helpBtn" title="快速鍵說明">⌨️ 快速鍵 <kbd>?</kbd></button>
+    <button class="subtle" id="soundBtn">🔊 音效: 開</button>
+    <button class="subtle" id="saveBtn">儲存</button>
+    <button class="subtle" id="loadBtn">讀取</button>
+    <button id="restartBtn">重新開始</button>
+  </div>
+</header>
+<section class="stats">
+  <div class="stat"><label>回合</label><strong id="turnStat">1 / 30</strong><div class="small" id="phaseStat">建設階段</div></div>
+  <div class="stat"><label>人口 (👤)</label><strong id="popStat" style="color:var(--orange)">3 / 3</strong><div class="small" id="foodDeficitHint">可用 / 上限</div></div>
+  <div class="stat"><label>存糧 (🍞)</label><strong id="foodStat" style="color:var(--green)">5</strong><div class="small" id="foodConsumeStat">產出 / 消耗</div></div>
+  <div class="stat"><label>金幣 (◈)</label><strong id="goldStat" style="color:var(--gold)">25</strong><div class="small" id="incomeStat">收入 +5</div></div>
+  <div class="stat"><label>信仰 (⛪)</label><strong id="faithStat" style="color:var(--white)">10 (+2)</strong><div class="small">奇蹟貨幣</div></div>
+  <div class="stat"><label>科技點 (🔬)</label><strong id="techPointsHeaderStat" style="color:var(--blue)">0 (+2)</strong><div class="small">研發專用點數</div></div>
+  <div class="stat"><label>文化點 (🎭)</label><strong id="culturePointsHeaderStat" style="color:var(--purple)">0 (+2)</strong><div class="small">政策解鎖點數</div></div>
+  <div class="stat"><label>總積分 (★)</label><strong id="scoreStat" style="color:var(--gold)">0</strong><div class="small">綜合評分</div></div>
+</section>
+
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="city">🏙️ 你的城市</button>
+  <button class="tab-btn" data-tab="tech">🔬 科技</button>
+  <button class="tab-btn" data-tab="culture">🏛️ 文化</button>
+  <button class="tab-btn" data-tab="missions">📜 任務</button>
+</nav>
+
+<div id="tab-city" class="tab-content active">
+  <main class="layout">
+    <section class="panel">
+      <div class="panel-head"><div><h2>城市棋盤</h2><p>注意建造建築需要消耗金幣與對應人口！</p></div><div class="action-row"><button id="cancelBtn" class="subtle">取消選牌 <kbd>Esc</kbd></button></div></div>
+      <div class="board-wrap"><div class="board" id="board" aria-label="城市棋盤"></div></div>
+      <div class="legend"><span><i class="swatch" style="background:#527d58"></i>平原</span><span><i class="swatch" style="background:#2f654b"></i>森林</span><span><i class="swatch" style="background:#367e9b"></i>水域</span><span><i class="swatch" style="background:#7c8586"></i>山地</span></div>
+	  <div class="panel-head"><div><h2>城市紀錄</h2><p>最近發生的事件。</p></div></div>
+      <div class="section-body"><div class="log" id="log"></div></div>
+    </section>
+    <div class="right-col">
+	  <section class="panel wide">
+        <div class="panel-head">
+          <div><h2>建築資訊</h2><p>點擊棋盤上的建築以檢視、升級或拆除。</p></div>
+        </div>
+        <div class="section-body" id="buildingInfoContent" style="font-size:12px; color:var(--muted);">
+          尚未選取建築。點擊棋盤上的建築物來查看等級、產出，並進行升級或拆除。
+        </div>
+		</section>	
+      <section class="panel wide">
+        <div class="panel-head">
+          <div><h2>手牌</h2><p>點擊卡牌或按 1–0 選牌，滑過棋盤格子可預覽產出，點擊放置。</p></div>
+          <div class="action-row">
+            <button id="drawBtn">抽 1 張 · 3 ◈ <kbd>D</kbd></button>
+          </div>
+        </div>
+        <div class="section-body"><div class="hand" id="hand"></div></div>
+        <div class="panel-head"><div><h2>城市商店</h2><p>花費信仰施放奇蹟；鎖定的商品會保留。</p></div><button id="refreshShopBtn" class="subtle">刷新 · 2 ◈ <kbd>R</kbd></button></div>
+        <div class="section-body"><div class="shop-grid" id="shop"></div></div>
+        <div class="section-body action-row"><button id="endTurnBtn" class="primary">結束回合 → <kbd>E</kbd></button><span id="endHint" style="font-size:11px;color:var(--muted)">結算產出、糧食消耗與收入</span></div>
+      </section>
+      <section class="panel wide">
+		<div class="panel-head"><div><h2>系統訊息</h2></div></div>
+        <div class="section-body">
+          <div id="message" class="message" style="margin:0;">請選擇一張建築卡，並點擊棋盤上的對應地形。</div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div id="tab-tech" class="tab-content">
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 900px;">
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>科技樹</h2><p>點擊科技節點查看效果與解鎖新技術！</p></div>
+        <span id="techPointsStat" style="color:var(--purple); font-weight:bold; font-size:16px;">🔬 0 點</span>
+      </div>
+      <div class="section-body" id="techTreeContainer"></div>
+    </section>
+  </main>
+</div>
+
+<div id="tab-culture" class="tab-content">
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 900px;">
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>文化樹</h2><p>花費每回合產出的文化點來解鎖文化政策與藝術！</p></div>
+        <span id="culturePointsStat" style="color:var(--gold); font-weight:bold; font-size:16px;">🎭 0 點</span>
+      </div>
+      <div class="section-body" id="cultureTreeContainer"></div>
+    </section>
+  </main>
+</div>
+
+<div id="tab-missions" class="tab-content">
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 900px;">
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>任務中心</h2><p>達成目標並手動領取獎勵，完成後將自動刷新並補充新任務！</p></div>
+      </div>
+      <div class="section-body" id="missionsContainer"></div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="techModalBackdrop">
+  <div class="modal">
+    <h2 id="techModalTitle">科技名稱</h2>
+    <p id="techModalDesc" style="color:var(--text); margin:12px 0; line-height:1.5;"></p>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px;">
+      <span id="techModalCost" style="color:var(--purple); font-weight:bold; font-size:15px;">研發消耗：0 🔬</span>
+      <span id="techModalStatus" style="font-weight:bold; font-size:13px;"></span>
+    </div>
+    <div class="action-row" style="margin-top:20px;">
+      <button class="primary" id="techModalResearchBtn">研發科技</button>
+      <button id="techModalClose">關閉</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="cultureModalBackdrop">
+  <div class="modal">
+    <h2 id="cultureModalTitle">文化名稱</h2>
+    <p id="cultureModalDesc" style="color:var(--text); margin:12px 0; line-height:1.5;"></p>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px;">
+      <span id="cultureModalCost" style="color:var(--gold); font-weight:bold; font-size:15px;">解鎖消耗：0 🎭</span>
+      <span id="cultureModalStatus" style="font-weight:bold; font-size:13px;"></span>
+    </div>
+    <div class="action-row" style="margin-top:20px;">
+      <button class="primary" id="cultureModalResearchBtn">解鎖文化</button>
+      <button id="cultureModalClose">關閉</button>
+    </div>
+  </div>
+</div>
+
+<div class="footer-note" data-version></div>
+<div class="modal-backdrop" id="modalBackdrop"><div class="modal"><h2 id="modalTitle">城市完成</h2><p id="modalText"></p><div class="action-row"><button class="primary" id="modalRestart">再玩一局</button><button id="modalClose">返回城市</button></div></div></div>
+<div class="modal-backdrop" id="eventModalBackdrop"><div class="modal"><h2 id="eventModalTitle" style="color:var(--gold)">🏛️ 城市事件</h2><p id="eventModalText"></p><div class="action-row" style="justify-content: center;"><button class="primary" id="eventModalClose">確認並開始回合</button></div></div></div>
+
+<div class="cell-tip" id="cellTip" role="tooltip"></div>
+
+<div class="modal-backdrop" id="shortcutModalBackdrop"><div class="modal">
+  <h2>⌨️ 快速鍵</h2>
+  <div class="shortcut-list" id="shortcutList"></div>
+  <div class="action-row"><button class="primary" id="shortcutModalClose">關閉 <kbd>Esc</kbd></button></div>
+</div></div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
