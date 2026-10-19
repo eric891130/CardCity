@@ -1,5 +1,5 @@
 import { state, playSound, message } from './state.js';
-import { CARDS, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN } from './config.js';
+import { RARITY_CONFIG , CARDS, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN } from './config.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { computeCellStats, computeOnBuild, unlockedBuildingIds } from './effects.js';
 
@@ -29,11 +29,61 @@ export function availableCardPool(){
   for(const b of unlockedBuildingIds()) if(!pool.includes(b)) pool.push(b);
   return pool;
 }
-// 研發出新建築時，直接把它塞進目前牌堆，不必等重洗
-export function addCardsToDeck(type, count = 2){
+
+// 依稀有度取得牌庫張數
+export function getCardDeckCount(cardId) {
+  const card = CARDS[cardId];
+  if (!card || !card.rarity || !RARITY_CONFIG[card.rarity]) return 2; // 預設 2 張
+  return RARITY_CONFIG[card.rarity].count;
+}
+
+// 依稀有度初始化牌庫
+export function initDeck(pool) {
+  let deck = [];
+  pool.forEach(id => {
+    let count = getCardDeckCount(id);
+    for (let i = 0; i < count; i++) {
+      deck.push(id); 
+    }
+  });
+  return shuffle(deck);
+}
+
+// 研發出新建築時，依稀有度加入張數
+export function addCardsToDeck(type) {
+  let count = getCardDeckCount(type);
   state.deck = shuffle([...state.deck, ...Array(count).fill(type)]);
 }
+
 export function drawFromDeck(){if(!state.deck.length)state.deck=shuffle(availableCardPool());return newCard(state.deck.pop())}
+
+// 統計目前牌庫剩餘的各張卡片數量
+export function getDeckComposition() {
+  const currentPool = availableCardPool();
+  const counts = {};
+  
+  // 初始化可用卡池的計數為 0
+  currentPool.forEach(id => { counts[id] = 0; });
+  
+  // 計算 state.deck 裡實際剩餘的張數（兼容物件 {type: 'xxx'} 或純字串 'xxx'）
+  if (state && state.deck) {
+    state.deck.forEach(card => {
+      // 判斷 card 是物件（有 type 屬性）還是直接就是字串 id
+      const cardType = (typeof card === 'object' && card !== null) ? card.type : card;
+      
+      if (cardType && counts[cardType] !== undefined) {
+        counts[cardType]++;
+      } else if (cardType) {
+        counts[cardType] = 1; // 預防萬一卡池外的新解鎖卡片
+      }
+    });
+  }
+  
+  return {
+    total: state && state.deck ? state.deck.length : 0,
+    counts: counts
+  };
+}
 // 商店只存 {id, locked}，不存函式（函式無法 JSON 存檔），顯示/購買時再從 SHOP_ITEMS 查表
 export function makeShop(){return shuffle(SHOP_ITEMS).slice(0, 3).map(item => ({ id: item.id, locked: false }));}
 // 重新整理商店：保留鎖定的商品，其餘重抽補滿 3 格（回合開始與手動刷新共用）
@@ -96,8 +146,15 @@ export function getScoreBreakdown(){
   }
   return out;
 }
+
 export function calculateTotalScore(){
-  return getScoreBreakdown().reduce((sum, e) => sum + e.value, 0);
+  // 1. 建築分總計
+  let buildingScore = (state.scores && state.scores.buildingScore) || 0;
+  
+  // 2. 遊戲過程中產生的資源總和（金幣 + 信仰點 + 科技點 + 文化點）
+  let totalResources = (state.gold || 0) + (state.faith || 0) + (state.techPoints || 0) + (state.culturePoints || 0);
+  
+  return buildingScore + totalResources;
 }
 
 export function canAfford(type){

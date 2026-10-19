@@ -1,6 +1,6 @@
 import { state, setState, soundEnabled, setSoundEnabled, playSound, message } from './state.js';
-import { HAND_LIMIT, TERRAIN_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION } from './config.js';
-import { rand, calculate, terrainMap, shuffle, drawFromDeck, makeShop, rebuildShop, calculateTotalScore, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
+import { HAND_LIMIT, TERRAIN_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG} from './config.js';
+import { rand, calculate, terrainMap, initDeck, shuffle, drawFromDeck, getDeckComposition, makeShop, rebuildShop, calculateTotalScore, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { renderBoard, renderHand, renderShop, renderMissions, updateMissionTabNotification, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip } from './render.js';
 import { TREES, renderTree, openTreeModal, closeTreeModal, unlockSelectedNode } from './trees.js';
@@ -107,6 +107,51 @@ function onHandCardClick(card){
   message(state.selected ? `已選擇 ${d.name}，請點擊棋盤。` : '已取消選牌。');
 }
 
+function openDeckModal() {
+  const deckInfo = getDeckComposition();
+  const container = $('deckModalContent');
+  if(!container) return;
+
+  container.innerHTML = `<div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:6px;">牌庫總剩餘張數：<span style="color:var(--gold);">${deckInfo.total} 張</span></div>`;
+
+  let listHtml = '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:8px;">';
+  
+  for(const cardId in deckInfo.counts) {
+	const cardData = CARDS[cardId];
+	if(!cardData) continue;
+	const count = deckInfo.counts[cardId];
+  
+	let rarityKey = cardData.rarity || 'common';
+	let rarityInfo = RARITY_CONFIG[rarityKey] || RARITY_CONFIG.common;
+
+	listHtml += `
+		<div style="display:flex; align-items:center; justify-content:space-between; background:#101820; padding:8px 12px; border-radius:6px; border:1px solid var(--line); border-left: 4px solid ${rarityInfo.color};">
+		<div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:20px;">${cardData.emoji}</span>
+        <div>
+          <div style="font-size:13px; color:var(--text); font-weight:bold;">
+            ${cardData.name} <span style="font-size:10px; color:${rarityInfo.color};">[${rarityInfo.name}]</span>
+          </div>
+          <div style="font-size:10px; color:var(--muted);">${cardData.type}建築 · 費用 ${cardData.cost.gold}◈</div>
+        </div>
+		</div>
+		<div style="text-align:right;">
+        <span style="font-size:14px; font-weight:bold; color:${count > 0 ? 'var(--green)' : 'var(--muted)'};">${count} 張</span>
+		</div>
+		</div>
+  `;
+}
+  listHtml += '</div>';
+  container.innerHTML += listHtml;
+
+  $('deckModalBackdrop').classList.add('show');
+}
+
+// 事件綁定
+$('viewDeckBtn').addEventListener('click', openDeckModal);
+$('deckModalClose').addEventListener('click', () => $('deckModalBackdrop').classList.remove('show'));
+$('deckModalConfirmBtn').addEventListener('click', () => $('deckModalBackdrop').classList.remove('show'));
+
 // ===== 格子預覽：選牌後滑過格子，顯示「放在這裡會有什麼變化」=====
 function onCellPointer(c, ev){
   const card = state.selected ? state.hand.find(h => h.id === state.selected) : null;
@@ -177,7 +222,7 @@ function startGame(){
     techPoints: 0, unlockedTechs: [],
     culturePoints: 0, unlockedCultures: [],
     activeMissions: [],
-    board:terrainMap(), hand:[], deck:shuffle([...cardPool,...cardPool]), 
+    board:terrainMap(), hand:[], deck:initDeck(cardPool), 
     shop: [],
     selected:null, log:[],
     gameOver:false
@@ -416,7 +461,8 @@ if(configProblems.length){
 // ===== 公告與新手教學邏輯 =====
 
 // 開啟公告彈窗
-function openNoticeModal() {
+function openNoticeModal(defaultTab = 'tutorial') {
+  switchNoticeTab(defaultTab);
   $('noticeModalBackdrop').classList.add('show');
 }
 
@@ -435,17 +481,29 @@ function switchNoticeTab(tabName) {
   }
 }
 
-// 檢查是否為首次遊玩，如果是則自動彈出
-function checkFirstTimePlayer() {
-  const hasSeenNotice = localStorage.getItem('hasSeenCardCityNoticeV1');
-  if (!hasSeenNotice) {
-    openNoticeModal();
-    localStorage.setItem('hasSeenCardCityNoticeV1', 'true');
+// 檢查是否為「首次遊玩」或「有版號更新」
+function checkNoticeModalOnLoad() {
+  const lastSeenVersion = localStorage.getItem('cardCity_lastSeenVersion');
+
+  if (!lastSeenVersion) {
+    // 1. 完全的新玩家：彈出公告（預設顯示新手教學）
+    openNoticeModal('tutorial');
+    localStorage.setItem('cardCity_lastSeenVersion', VERSION);
+  } else if (lastSeenVersion !== VERSION) {
+    // 2. 老玩家遭遇新版本更新：自動彈出公告，且「預設直接切到更新日誌分頁」！
+    openNoticeModal('changelog');
+    localStorage.setItem('cardCity_lastSeenVersion', VERSION);
+  }
+}
+function initUpdateLogVersion() {
+  const latestTitleEl = $('latestVersionTitle');
+  if (latestTitleEl) {
+    latestTitleEl.textContent = `v${VERSION} (目前版本)`;
   }
 }
 
 // 事件綁定
-$('noticeBtn').addEventListener('click', openNoticeModal);
+$('noticeBtn').addEventListener('click', () => openNoticeModal('tutorial')); // 點擊按鈕預設開新手教學
 $('noticeModalClose').addEventListener('click', () => $('noticeModalBackdrop').classList.remove('show'));
 $('noticeModalConfirmBtn').addEventListener('click', () => $('noticeModalBackdrop').classList.remove('show'));
 
@@ -453,4 +511,5 @@ $('noticeTabTutorialBtn').addEventListener('click', () => switchNoticeTab('tutor
 $('noticeTabChangelogBtn').addEventListener('click', () => switchNoticeTab('changelog'));
 
 // 在遊戲初始化後呼叫檢查
-checkFirstTimePlayer();
+checkNoticeModalOnLoad();
+initUpdateLogVersion();

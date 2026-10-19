@@ -1,7 +1,7 @@
 // ===== 版本（集中管理）=====
 // VERSION      遊戲顯示版本，只需改這一處（標題、畫面左上角、頁尾都會自動更新）
 // SAVE_VERSION 存檔資料格式版本；存檔結構有不相容的變動時才 +1，並到 save.js 的 migrateSave 補遷移
-export const VERSION = '0.11';
+export const VERSION = '0.11.2';
 export const SAVE_VERSION = 2;
 export const SAVE_KEY = 'cardCitySave';
 export const LEGACY_SAVE_KEYS = ['cardCitySaveV9'];
@@ -23,12 +23,18 @@ export const OUTPUTS = {
   techPoints:    { label:'科技點',   icon:'🔬', group:'resource', stateKey:'techPoints' },
   faithPoints:   { label:'信仰點',   icon:'⛪', group:'resource', stateKey:'faith' },
   population:    { label:'人口上限', icon:'👤', group:'capacity' },
-  cultureScore:  { label:'文化分',   icon:'🎭', group:'score' },
-  techScore:     { label:'科技分',   icon:'🔬', group:'score' },
-  faithScore:    { label:'信仰分',   icon:'⛪', group:'score' }
+  buildingScore: { label:'建築分',   icon:'🏛️', group:'score' },
 };
 // 每回合的基礎產出（沒有任何建築也會有）
 export const BASE_PER_TURN = { gold:5, culturePoints:2, techPoints:2, faithPoints:2 };
+
+//建築的稀有度與初始張數
+export const RARITY_CONFIG = {
+  common:   { name: '普通', count: 4, color: '#a0a0a0' },
+  rare:     { name: '稀有', count: 3, color: '#3498db' },
+  epic:     { name: '罕見', count: 2, color: '#9b59b6' },
+  legendary:{ name: '傳說', count: 1, color: '#f1c40f' }
+};
 
 // ============================================================================
 //  建築（CARDS）：新增一座建築 = 在下面加一筆資料，再把 id 加進最下方的 cardPool
@@ -59,12 +65,12 @@ export const BASE_PER_TURN = { gold:5, culturePoints:2, techPoints:2, faithPoint
 //    cap = 最多算幾個。output 決定計入時機：資源 / 人口每回合結算，xxxScore 只在最終計分時結算。
 //
 //  【目前的文化 / 科技 / 信仰效果都是「成對」的】
-//    例如住宅同時有 points:culturePoints 與 finalScore:cultureScore。這是為了讓拆分機制後的數值
+//    例如住宅同時有 points:culturePoints 與 finalScore:buildingScore。這是為了讓拆分機制後的數值
 //    與舊版完全一致；想讓某個效果「只給點數」或「只給分數」，刪掉其中一條即可。
 // ============================================================================
 export const CARDS = {
   farm: {
-    name:'農田', emoji:'🌾', type:'生產',
+    name:'農田', emoji:'🌾', type:'生產',rarity: 'common', 
     cost:{ gold:3, pop:1 }, terrain:['plain','forest'],
     effects:[
       { type:'points',          output:'food', amount:2 },
@@ -72,30 +78,30 @@ export const CARDS = {
     ]
   },
   house: {
-    name:'住宅', emoji:'🏠', type:'人口',
+    name:'住宅', emoji:'🏠', type:'人口',rarity: 'common',
     cost:{ gold:4, pop:0 }, terrain:['plain','forest'],
     effects:[
       { type:'points',           output:'population',    amount:3 },
       { type:'points',           output:'culturePoints', amount:2 },
-      { type:'finalScore',       output:'cultureScore',  amount:2 },
+      { type:'finalScore',       output:'buildingScore',  amount:2 },
       { type:'adjacentBuilding', target:'park', output:'culturePoints', amount:2 },
-      { type:'adjacentBuilding', target:'park', output:'cultureScore',  amount:2 }
+      { type:'adjacentBuilding', target:'park', output:'buildingScore',  amount:2 }
     ]
   },
   park: {
-    name:'公園', emoji:'🌳', type:'環境',
+    name:'公園', emoji:'🌳', type:'環境',rarity: 'rare',
     cost:{ gold:3, pop:1 }, terrain:['plain','forest'],
     effects:[]
   },
   factory: {
-    name:'工廠', emoji:'🏭', type:'工業',
+    name:'工廠', emoji:'🏭', type:'工業',rarity: 'epic',
     cost:{ gold:7, pop:2 }, terrain:['plain'],
     effects:[
       { type:'points', output:'gold', amount:4 }
     ]
   },
   market: {
-    name:'市場', emoji:'🏪', type:'商業',
+    name:'市場', emoji:'🏪', type:'商業',rarity: 'rare',
     cost:{ gold:6, pop:1 }, terrain:['plain','forest'],
     effects:[
       { type:'points',           output:'gold', amount:2 },
@@ -103,14 +109,14 @@ export const CARDS = {
     ]
   },
   road: {
-    name:'道路', emoji:'🛣️', type:'設施',
+    name:'道路', emoji:'🛣️', type:'設施',rarity: 'common',
     cost:{ gold:2, pop:0 }, terrain:['plain','forest'],
     effects:[
       { type:'adjacentAura', target:['market','factory'], output:'gold', amount:1 }
     ]
   },
   well: {
-    name:'水井', emoji:'⛲', type:'設施',
+    name:'水井', emoji:'⛲', type:'設施',rarity: 'rare',
     cost:{ gold:5, pop:1 }, terrain:['plain','forest'],
     effects:[
       { type:'points',           output:'gold', amount:1 },
@@ -118,19 +124,19 @@ export const CARDS = {
     ]
   },
   library: {
-    name:'圖書館', emoji:'📚', type:'文化',
+    name:'圖書館', emoji:'📚', type:'文化',rarity: 'rare',
     cost:{ gold:8, pop:1 }, terrain:['plain','forest'],
     effects:[
       { type:'points',        output:'culturePoints', amount:2 },
-      { type:'finalScore',    output:'cultureScore',  amount:2 },
+      { type:'finalScore',    output:'buildingScore',  amount:2 },
       { type:'points',        output:'techPoints',    amount:2 },
-      { type:'finalScore',    output:'techScore',     amount:2 },
+      { type:'finalScore',    output:'buildingScore',     amount:2 },
       { type:'buildingCount', target:'house', min:3, output:'techPoints', amount:3 },
-      { type:'buildingCount', target:'house', min:3, output:'techScore',  amount:3 }
+      { type:'buildingCount', target:'house', min:3, output:'buildingScore',  amount:3 }
     ]
   },
   windmill: {
-    name:'風車', emoji:'🌬️', type:'生產',
+    name:'風車', emoji:'🌬️', type:'生產',rarity: 'epic',
     cost:{ gold:6, pop:1 }, terrain:['plain','forest'],
     effects:[
       { type:'points',          output:'gold', amount:2 },
@@ -138,7 +144,7 @@ export const CARDS = {
     ]
   },
   monument: {
-    name:'紀念碑', emoji:'🏛️', type:'地標',
+    name:'紀念碑', emoji:'🏛️', type:'地標',rarity:'legendary',
     cost:{ gold:10, pop:2 }, terrain:['plain'],
     effects:[
       { type:'onBuild', output:'culturePoints', amount:5 },
@@ -146,7 +152,7 @@ export const CARDS = {
     ]
   },
   mine: {
-    name:'礦場', emoji:'⛏️', type:'工業',
+    name:'礦場', emoji:'⛏️', type:'工業',rarity: 'rare',
     cost:{ gold:6, pop:1 }, terrain:['mountain'],
     effects:[
       { type:'points',          output:'gold', amount:3 },
@@ -154,15 +160,15 @@ export const CARDS = {
     ]
   },
   church: {
-    name:'教堂', emoji:'⛪', type:'信仰',
+    name:'教堂', emoji:'⛪', type:'信仰',rarity: 'rare',
     cost:{ gold:8, pop:1 }, terrain:['plain'],
     effects:[
       { type:'points',     output:'faithPoints', amount:3 },
-      { type:'finalScore', output:'faithScore',  amount:3 }
+      { type:'finalScore', output:'buildingScore',  amount:3 }
     ]
   },
   bakery: {
-    name:'麵包坊', emoji:'🥐', type:'商業',
+    name:'麵包坊', emoji:'🥐', type:'商業',rarity: 'rare',
     cost:{ gold:5, pop:1 }, terrain:['plain','forest'],
     effects:[
       { type:'points',  output:'gold', amount:1 },
@@ -170,42 +176,42 @@ export const CARDS = {
     ]
   },
   academy: {
-    name:'學院', emoji:'🎓', type:'科技',
+    name:'學院', emoji:'🎓', type:'科技',rarity: 'epic',
     cost:{ gold:9, pop:1 }, terrain:['plain'],
     effects:[
       { type:'uniqueTypes', output:'techPoints', amount:1, cap:6 },
-      { type:'uniqueTypes', output:'techScore',  amount:1, cap:6 }
+      { type:'uniqueTypes', output:'buildingScore',  amount:1, cap:6 }
     ]
   },
   festival: {
-    name:'節慶廣場', emoji:'🎪', type:'地標',
+    name:'節慶廣場', emoji:'🎪', type:'地標',rarity:'legendary',
     cost:{ gold:8, pop:1 }, terrain:['plain'],
     effects:[
       { type:'onBuild', output:'gold', amount:2 },
-      { type:'onBuild', target:'any', output:'cultureScore', amount:2 }
+      { type:'onBuild', target:'any', output:'buildingScore', amount:2 }
     ]
   },
   townhall: {
-    name:'市政廳', emoji:'🏛️', type:'行政',
+    name:'市政廳', emoji:'🏛️', type:'行政',rarity:'legendary',
     cost:{ gold:12, pop:2 }, terrain:['plain'],
     effects:[
       { type:'points',         output:'culturePoints', amount:4 },
-      { type:'finalScore',     output:'cultureScore',  amount:4 },
+      { type:'finalScore',     output:'buildingScore',  amount:4 },
       { type:'radiusBuilding', radius:2, target:'house', output:'culturePoints', amount:1 },
-      { type:'radiusBuilding', radius:2, target:'house', output:'cultureScore',  amount:1 }
+      { type:'radiusBuilding', radius:2, target:'house', output:'buildingScore',  amount:1 }
     ]
   },
   hospital: {
-    name:'醫院', emoji:'🏥', type:'公共服務',
+    name:'醫院', emoji:'🏥', type:'公共服務',rarity:'epic',
     cost:{ gold:9, pop:1 }, terrain:['plain'],
     effects:[
       { type:'points',         output:'culturePoints', amount:2 },
-      { type:'finalScore',     output:'cultureScore',  amount:2 },
+      { type:'finalScore',     output:'buildingScore',  amount:2 },
       { type:'radiusBuilding', radius:2, target:'house', output:'population', amount:1, cap:3 }
     ]
   },
   watermill: {
-    name:'水力磨坊', emoji:'⚙️', type:'科技解鎖',
+    name:'水力磨坊', emoji:'⚙️', type:'科技解鎖',rarity:'rare',
     cost:{ gold:6, pop:1 }, terrain:['water'],
     effects:[
       { type:'points', output:'food', amount:3 },
@@ -213,19 +219,19 @@ export const CARDS = {
     ]
   },
   iron_mine: {
-    name:'鐵礦場', emoji:'⛏️', type:'科技解鎖',
+    name:'鐵礦場', emoji:'⛏️', type:'科技解鎖',rarity:'rare',
     cost:{ gold:8, pop:2 }, terrain:['mountain'],
     effects:[
       { type:'points', output:'gold', amount:5 }
     ]
   },
   business_center: {
-    name:'商務中心', emoji:'🏢', type:'科技解鎖',
+    name:'商務中心', emoji:'🏢', type:'科技解鎖',rarity:'epic',
     cost:{ gold:10, pop:2 }, terrain:['plain'],
     effects:[
       { type:'points',     output:'gold',          amount:6 },
       { type:'points',     output:'culturePoints', amount:2 },
-      { type:'finalScore', output:'cultureScore',  amount:2 }
+      { type:'finalScore', output:'buildingScore',  amount:2 }
     ]
   }
 };
@@ -263,7 +269,7 @@ export const TECH_TREE = {
     effects: [
       { type:'unlockBuilding', target:'business_center' },
       { type:'buildingBonus',  target:'house',  output:'culturePoints', amount:1 },
-      { type:'buildingBonus',  target:'house',  output:'cultureScore',  amount:1 },
+      { type:'buildingBonus',  target:'house',  output:'buildingScore',  amount:1 },
       { type:'buildingBonus',  target:'market', output:'gold',          amount:1 }
     ]
   },
@@ -293,7 +299,7 @@ export const CULTURE_TREE = {
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:'house', output:'culturePoints', amount:1 },
-      { type:'buildingBonus', target:'house', output:'cultureScore',  amount:1 }
+      { type:'buildingBonus', target:'house', output:'buildingScore',  amount:1 }
     ]
   },
   arts: {
@@ -302,7 +308,7 @@ export const CULTURE_TREE = {
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:'park', output:'culturePoints', amount:1 },
-      { type:'buildingBonus', target:'park', output:'cultureScore',  amount:1 }
+      { type:'buildingBonus', target:'park', output:'buildingScore',  amount:1 }
     ]
   },
   philosophy: {
@@ -311,7 +317,7 @@ export const CULTURE_TREE = {
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:['library','church'], output:'culturePoints', amount:2 },
-      { type:'buildingBonus', target:['library','church'], output:'cultureScore',  amount:2 }
+      { type:'buildingBonus', target:['library','church'], output:'buildingScore',  amount:2 }
     ]
   },
   public_gardens: {
@@ -320,7 +326,7 @@ export const CULTURE_TREE = {
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:['park','hospital'], output:'culturePoints', amount:1 },
-      { type:'buildingBonus', target:['park','hospital'], output:'cultureScore',  amount:1 }
+      { type:'buildingBonus', target:['park','hospital'], output:'buildingScore',  amount:1 }
     ]
   },
   civic_pride: {
@@ -329,7 +335,7 @@ export const CULTURE_TREE = {
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:['townhall','festival'], output:'culturePoints', amount:2 },
-      { type:'buildingBonus', target:['townhall','festival'], output:'cultureScore',  amount:2 }
+      { type:'buildingBonus', target:['townhall','festival'], output:'buildingScore',  amount:2 }
     ]
   }
 };

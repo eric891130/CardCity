@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { CARDS, TERRAIN_NAMES, SHOP_ITEMS, OUTPUTS } from './config.js';
+import { CARDS, TERRAIN_NAMES, SHOP_ITEMS, OUTPUTS, RARITY_CONFIG } from './config.js';
 import { canPlace, canAfford } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { describeCard } from './effects.js';
@@ -116,34 +116,49 @@ export function hideCellTip(){
 export function renderHand(onCardClick, onToggleLock){
   const el=$('hand'); el.innerHTML='';
   state.hand.forEach((card, idx)=>{
-    let d=CARDS[card.type], b=document.createElement('div');
+    const cardType = (typeof card === 'object' && card !== null) ? card.type : card;
+    let d = CARDS[cardType];
+    
+    if(!d) {
+      console.error("❌ 錯誤：手牌中出現未定義的卡片類型 ->", card);
+      return;
+    }
+
+    // 取得該卡片的稀有度與對應顏色（若沒填預設為 common）
+    let rarityKey = d.rarity || 'common';
+    let rarityInfo = RARITY_CONFIG[rarityKey] || RARITY_CONFIG.common;
+
+    let b=document.createElement('div');
     b.className = 'card' + (state.selected === card.id ? ' active' : '') + (card.locked ? ' locked' : '');
     
+    // 👈 這裡利用 rarityInfo.color 動態為卡牌加上稀有度邊框或色塊提示
+    b.style.borderColor = rarityInfo.color;
+
     b.innerHTML = `
       ${idx < 10 ? `<span class="slot-key" title="快速鍵">${(idx + 1) % 10}</span>` : ''}
       <div class="card-body">
         <span class="c-emoji">${d.emoji}</span>
         <span class="c-name">${d.name}</span>
       </div>
+      <!-- 顯示稀有度標籤與對應顏色 -->
+      <span class="card-rarity" style="color: ${rarityInfo.color}; font-size: 10px; font-weight: bold; margin: 2px 0;">[${rarityInfo.name}]</span>
       <span class="type">${d.type}</span>
       <span class="c-desc">${describeCard(d)}</span>
       <span class="cost">費用: ${d.cost.gold}◈ / ${d.cost.pop}👤</span>
       <button class="lock-btn ${card.locked ? 'active' : ''}" title="鎖定卡牌">${card.locked ? '🔒 已鎖定' : '🔓 鎖定'}</button>
     `;
 
-    // 整張卡片都可點擊選牌（鎖定按鈕會自行阻止事件冒泡）
     b.addEventListener('click', () => {
       if(onCardClick) onCardClick(card);
     });
 
-    // 點擊鎖定按鈕
     b.querySelector('.lock-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       card.locked = !card.locked;
       if(onToggleLock) onToggleLock();
     });
 
-    if(!canAfford(card.type)) b.style.opacity='.62';
+    if(!canAfford(cardType)) b.style.opacity='.62';
     el.appendChild(b);
   });
   if(!state.hand.length) el.innerHTML='<div style="color:var(--muted);font-size:12px">手牌已空。</div>';

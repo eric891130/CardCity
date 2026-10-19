@@ -31,7 +31,7 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     }
   };
 
-  const CARD_FIELDS = ['name', 'emoji', 'type', 'cost', 'terrain', 'effects', 'desc'];
+  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'terrain', 'effects', 'desc'];
   for (const id in cards) {
     const c = cards[id], at = `CARDS.${id}`;
     if (typeof c.name !== 'string' || !c.name) bad(at, '缺少 name（顯示名稱）。');
