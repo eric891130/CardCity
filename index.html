@@ -26,7 +26,7 @@
   <div class="stat"><label>信仰 (⛪)</label><strong id="faithStat" style="color:var(--white)">10 (+2)</strong><div class="small">奇蹟貨幣</div></div>
   <div class="stat"><label>科技點 (🔬)</label><strong id="techPointsHeaderStat" style="color:var(--blue)">0 (+2)</strong><div class="small">研發專用點數</div></div>
   <div class="stat"><label>文化點 (🎭)</label><strong id="culturePointsHeaderStat" style="color:var(--purple)">0 (+2)</strong><div class="small">政策解鎖點數</div></div>
-  <div class="stat"><label>總積分 (★)</label><strong id="scoreStat" style="color:var(--gold)">0</strong><div class="small">綜合評分</div></div>
+  <div class="stat"><label>總積分 (★)</label><strong id="scoreStat" style="color:var(--gold)">0</strong><div class="small" id="scoreTargetHint">綜合評分</div>
 </section>
 
 <nav class="tab-bar">
@@ -34,6 +34,7 @@
   <button class="tab-btn" data-tab="tech">🔬 科技</button>
   <button class="tab-btn" data-tab="culture">🏛️ 文化</button>
   <button class="tab-btn" data-tab="missions">📜 任務</button>
+  <button class="tab-btn" data-tab="encyclopedia" style="margin-left: auto;">📖 卡牌圖鑑</button>
 </nav>
 
 <div id="tab-city" class="tab-content active">
@@ -41,7 +42,7 @@
     <section class="panel">
       <div class="panel-head"><div><h2>城市棋盤</h2><p>注意建造建築需要消耗金幣與對應人口！</p></div><div class="action-row"><button id="cancelBtn" class="subtle">取消選牌 <kbd>Esc</kbd></button></div></div>
       <div class="board-wrap"><div class="board" id="board" aria-label="城市棋盤"></div></div>
-      <div class="legend"><span><i class="swatch" style="background:#527d58"></i>平原</span><span><i class="swatch" style="background:#2f654b"></i>森林</span><span><i class="swatch" style="background:#367e9b"></i>水域</span><span><i class="swatch" style="background:#7c8586"></i>山地</span></div>
+      <div class="legend"><span><i class="swatch" style="background:#527d58"></i>地形：平原</span><span><i class="swatch" style="background:#88764e"></i>丘陵</span><span><i class="swatch" style="background:#367e9b"></i>河流</span><span><i class="swatch" style="background:#7c8586"></i>山地</span><span>｜地貌圖示：🌱草原 🌲森林 🏜️沙漠 ❄️雪地 🌿濕地</span></div>
 	  <div class="panel-head"><div><h2>城市紀錄</h2><p>最近發生的事件。</p></div></div>
       <div class="section-body"><div class="log" id="log"></div></div>
     </section>
@@ -70,7 +71,7 @@
       <section class="panel wide">
 		<div class="panel-head"><div><h2>系統訊息</h2></div></div>
         <div class="section-body">
-          <div id="message" class="message" style="margin:0;">請選擇一張建築卡，並點擊棋盤上的對應地形。</div>
+          <div id="message" class="message" style="margin:0;">請選擇一張建築卡，並點擊符合地形與地貌限制的棋盤格。</div>
         </div>
       </section>
     </div>
@@ -112,6 +113,20 @@
   </main>
 </div>
 
+<div id="tab-encyclopedia" class="tab-content">
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 1000px;">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>卡牌圖鑑</h2>
+          <p>記載所有建築的詳細資料、解鎖條件與升級路線。</p>
+        </div>
+      </div>
+      <div class="section-body" id="encyclopediaContainer"></div>
+    </section>
+  </main>
+</div>
+
 <div class="modal-backdrop" id="techModalBackdrop">
   <div class="modal">
     <h2 id="techModalTitle">科技名稱</h2>
@@ -143,7 +158,7 @@
 </div>
 
 <div class="footer-note" data-version></div>
-<div class="modal-backdrop" id="modalBackdrop"><div class="modal"><h2 id="modalTitle">城市完成</h2><p id="modalText"></p><div class="action-row"><button class="primary" id="modalRestart">再玩一局</button><button id="modalClose">返回城市</button></div></div></div>
+<div class="modal-backdrop" id="modalBackdrop"><div class="modal"><h2 id="modalTitle">城市完成</h2><p id="modalText" style="white-space: pre-line;"> </p><div class="action-row" style="display: flex; justify-content: center; gap: 12px; margin-top: 20px;"><button class="primary" id="modalRestart">再玩一局</button><button id="modalClose">返回城市</button></div></div></div>
 <div class="modal-backdrop" id="eventModalBackdrop"><div class="modal"><h2 id="eventModalTitle" style="color:var(--gold)">🏛️ 城市事件</h2><p id="eventModalText"></p><div class="action-row" style="justify-content: center;"><button class="primary" id="eventModalClose">確認並開始回合</button></div></div></div>
 
 <div class="cell-tip" id="cellTip" role="tooltip"></div>
@@ -212,7 +227,7 @@
 	========================================================================= -->
 	<!--
 	<div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);">vVERSION (目前版本)</strong> <small style="color:var(--muted);">- YYYY-MM</small>
+	  <strong style="color:var(--gold);">vVERSION (目前版本)</strong> <small style="color:var(--muted);">- YYYY-MM-DD</small>
 		<ul style="margin:5px 0; padding-left:20px;">
 		<li><b>【新增】核心功能名稱</b>：簡短說明該功能的作用與玩法影響。</li>
 		<li><b>【優化】介面或體驗改善</b>：說明調整了哪些UI介面或操作流程。</li>
@@ -221,9 +236,21 @@
       </ul>
     </div>
 	--> 
+	
+	  <div style="margin-bottom:15px;">
+	  <strong style="color:var(--gold);"  id="latestVersionTitle" > vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-22</small>
+		<ul style="margin:5px 0; padding-left:20px;">
+		<li><b>修改了升級系統，不再是單純增加數值，而是讓一個建築變成另一個更高級的建築。</li>
+		<li><b>重新繪製了科技樹/文化樹的排列方式，現在將會是橫向排列。</li>
+		<li><b>新增了遊戲失敗條件：人口歸零的話遊戲將會直接結束。並且第10/20回合將會有分數考核。</li>
+		<li><b>新增了卡牌圖鑑分頁，可以看到遊戲內所有的建築</li>
+		<li><b>新增地形與地貌</li>
+        </ul>
+      </div>	
+	
 
 	  <div style="margin-bottom:15px;">
-		<strong style="color:var(--gold);" id="latestVersionTitle" >v0.11.2 (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-19</small>
+		<strong style="color:var(--gold); "> v0.11.2 </strong> <small style="color:var(--muted);">- 2026-10-19</small>
 		<ul style="margin:5px 0; padding-left:20px;">
 		<li><b>計分機制重構</b>：統一簡化建築產出為「建築分」，最終分數改為「建築分 + 遊戲中累積產出的總資源（金幣/信仰/科技/文化）」。</li>
 		<li><b>稀有度系統引入</b>：加入「普通、稀有、罕見、傳說」四種稀有度等級，影響卡牌初始加入牌庫與科技解鎖時的張數。</li>
@@ -244,13 +271,6 @@
 		  <li>開始在Github上公開遊戲了。</li>
         </ul>
       </div>
-      <div>
-        <strong style="color:var(--gold);">v0.10</strong>
-        <ul style="margin:5px 0; padding-left:20px;">
-          <li>完成模組化架構重構（拆分 config, state, game, render, trees）。</li>
-          <li>新增雙樹系統（科技樹與文化樹）。</li>
-        </ul>
-      </div>
     </div>
 
     <div class="action-row" style="justify-content: center; margin-top: 15px;">
@@ -267,7 +287,21 @@
       <button class="icon-btn" id="deckModalClose" style="font-size:18px;">✕</button>
     </div>
     
-    <p style="font-size:12px; color:var(--muted); margin-top:0;">以下為目前牌庫中剩餘的卡片，以及透過科技/文化樹解鎖的完整可用卡池。</p>
+    <!-- 🔽 新增：說明文字與排序控制列 -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <p style="font-size:12px; color:var(--muted); margin:0;">以下為目前牌庫中剩餘的卡片，以及解鎖的完整可用卡池。</p>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span style="font-size:12px; color:var(--muted);">排序：</span>
+        <select id="deckSortSelect" style="background:#101820; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:2px 6px; font-size:12px; cursor:pointer;">
+          <option value="rarityAsc">稀有度 (低→高)</option>
+		  <option value="rarityDesc">稀有度 (高→低)</option>
+          <option value="costAsc">費用 (低→高)</option>
+          <option value="costDesc">費用 (高→低)</option>
+          <option value="name">名稱筆畫</option>
+          <option value="count">剩餘張數</option>
+        </select>
+      </div>
+    </div>
 
     <!-- 內容列表容器 -->
     <div id="deckModalContent" style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; padding-right: 4px;">

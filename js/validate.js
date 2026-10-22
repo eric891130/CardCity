@@ -1,7 +1,7 @@
 // 設定檢查器：啟動時掃過 CARDS / cardPool / 科技樹 / 文化樹，把「寫錯」的地方用白話講出來，
 // 而不是讓建築「安靜地沒有效果」。回傳問題清單（空陣列 = 沒問題）。
 // 規則來源是 effects.js 的登記表，所以新增效果類型時，這裡不用改。
-import { CARDS, OUTPUTS, TERRAIN_NAMES, TECH_TREE, CULTURE_TREE, cardPool } from './config.js';
+import { CARDS, OUTPUTS, LANDFORM_NAMES, BIOME_NAMES, TECH_TREE, CULTURE_TREE, cardPool } from './config.js';
 import { EFFECT_TYPES, TREE_EFFECT_TYPES } from './effects.js';
 import { targetList } from './board.js';
 
@@ -12,7 +12,8 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
   const problems = [];
   const bad = (where, text) => problems.push(`[${where}] ${text}`);
   const isNum = v => typeof v === 'number' && Number.isFinite(v);
-  const terrains = Object.keys(TERRAIN_NAMES);
+  const landforms = Object.keys(LANDFORM_NAMES);
+  const biomes = Object.keys(BIOME_NAMES);
   const outputList = Object.keys(OUTPUTS).join(' / ');
   const typeList = Object.keys(EFFECT_TYPES).join(' / ');
 
@@ -31,14 +32,21 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     }
   };
 
-  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'terrain', 'effects', 'desc'];
+  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'landforms', 'biomes', 'upgradesTo', 'upgradeCost', 'effects', 'desc'];
   for (const id in cards) {
     const c = cards[id], at = `CARDS.${id}`;
     if (typeof c.name !== 'string' || !c.name) bad(at, '缺少 name（顯示名稱）。');
     if (typeof c.emoji !== 'string' || !c.emoji) bad(at, '缺少 emoji。');
     if (!c.cost || !isNum(c.cost.gold) || !isNum(c.cost.pop)) bad(at, 'cost 必須寫成 {gold:數字, pop:數字}（不佔人口就寫 pop:0）。');
-    if (!Array.isArray(c.terrain) || !c.terrain.length) bad(at, `terrain 必須是非空陣列，例如 ['plain','forest']。`);
-    else for (const t of c.terrain) if (!terrains.includes(t)) bad(at, `terrain 裡的 "${t}" 不是有效地形（可用：${terrains.join(' / ')}）。`);
+    if (c.landforms !== undefined) {
+      if (!Array.isArray(c.landforms) || !c.landforms.length) bad(at, 'landforms 若有設定，必須是非空陣列。');
+      else for (const t of c.landforms) if (!landforms.includes(t)) bad(at, `landforms 裡的 "${t}" 不是有效地形（可用：${landforms.join(' / ')}）。`);
+    }
+    if (c.biomes !== undefined) {
+      if (!Array.isArray(c.biomes) || !c.biomes.length) bad(at, 'biomes 若有設定，必須是非空陣列。');
+      else for (const b of c.biomes) if (!biomes.includes(b)) bad(at, `biomes 裡的 "${b}" 不是有效地貌（可用：${biomes.join(' / ')}）。`);
+    }
+    if ('terrain' in c) bad(at, 'terrain 已拆成 landforms（地形）與 biomes（地貌）。');
     if ('production' in c) bad(at, '"production" 已移除：固定產出改寫成 effects 裡的 {type:\'points\', output:\'gold\', amount:2}（人口寫 output:\'population\'）。');
     for (const k in c) if (!CARD_FIELDS.includes(k) && k !== 'production') bad(at, `未知的欄位 "${k}"（可用：${CARD_FIELDS.join(' / ')}）。`);
     if (c.effects !== undefined && !Array.isArray(c.effects)) { bad(at, 'effects 必須是陣列。'); continue; }
@@ -55,14 +63,17 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
       for (const f of spec.needs) if (e[f] === undefined) bad(w, `${e.type} 需要欄位 "${f}"。`);
       checkOutput(w, e.output, spec.outputs, e.type);
       if (e.target !== undefined) checkTarget(w, e.target);
-      if (e.terrain !== undefined && !terrains.includes(e.terrain)) bad(w, `terrain "${e.terrain}" 不是有效地形（可用：${terrains.join(' / ')}）。`);
+      if (e.landform !== undefined && !landforms.includes(e.landform)) bad(w, `landform "${e.landform}" 不是有效地形（可用：${landforms.join(' / ')}）。`);
+      if (e.biome !== undefined && !biomes.includes(e.biome)) bad(w, `biome "${e.biome}" 不是有效地貌（可用：${biomes.join(' / ')}）。`);
       for (const f of ['radius', 'min', 'cap']) if (e[f] !== undefined && !isNum(e[f])) bad(w, `${f} 必須是數字。`);
     });
   }
 
   // 科技 / 文化樹
   const unlockable = new Set();
+  const upgradeOnlyBuildings = new Set(); // 👈 記錄僅限升級獲得的建築
   const TREE_FIELDS = ['name', 'icon', 'cost', 'requires', 'desc', 'unlocked', 'effects'];
+  
   for (const treeName in trees) {
     const tree = trees[treeName];
     for (const id in tree) {
@@ -83,7 +94,17 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
         for (const k in e) if (!allowed.includes(k)) bad(w, `${e.type} 沒有 "${k}" 這個欄位（可用：${allowed.join(' / ')}）。`);
         for (const f of spec.needs) if (e[f] === undefined) bad(w, `${e.type} 需要欄位 "${f}"。`);
         if (e.target !== undefined) checkTarget(w, e.target);
-        if (e.type === 'unlockBuilding') { if (typeof e.target === 'string') unlockable.add(e.target); if (Array.isArray(e.target) || e.target === 'any') bad(w, 'unlockBuilding 的 target 必須是單一建築 id。'); }
+        
+        if (e.type === 'unlockBuilding') { 
+          if (typeof e.target === 'string') {
+            unlockable.add(e.target);
+            // 👈 如果 mode 是 upgradeOnly，記錄下來，它不需要加入抽牌卡池
+            if (e.mode === 'upgradeOnly') {
+              upgradeOnlyBuildings.add(e.target);
+            }
+          }
+          if (Array.isArray(e.target) || e.target === 'any') bad(w, 'unlockBuilding 的 target 必須是單一建築 id。'); 
+        }
         if (e.type === 'buildingBonus') { checkOutput(w, e.output, ['resource', 'capacity', 'score'], e.type); if (!isNum(e.amount)) bad(w, 'amount 必須是數字。'); }
         if (e.type === 'effectBoost') {
           if (!isNum(e.amount)) bad(w, 'amount 必須是數字。');
@@ -96,10 +117,16 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     }
   }
 
-  // 卡池與解鎖：每座建築都必須「抽得到」
+  // 卡池與解鎖：每座建築都必須「抽得到」或是「僅限升級獲得 (upgradeOnly)」
   pool.forEach(id => { if (!(id in cards)) bad('cardPool', `"${id}" 不是任何建築的 id。`); });
   new Set(pool.filter((id, i) => pool.indexOf(id) !== i)).forEach(id => bad('cardPool', `"${id}" 重複出現了。`));
-  for (const id in cards) if (!pool.includes(id) && !unlockable.has(id)) bad(`CARDS.${id}`, '沒有加進 cardPool，也沒有被任何科技解鎖，所以永遠抽不到。');
+  
+  for (const id in cards) {
+    // 👈 允許 upgradeOnly 的建築不在 pool 裡面，也不會報錯
+    if (!pool.includes(id) && !unlockable.has(id) && !upgradeOnlyBuildings.has(id)) {
+      bad(`CARDS.${id}`, '沒有加進 cardPool，也沒有被任何科技解鎖，所以永遠抽不到。');
+    }
+  }
 
   return problems;
 }

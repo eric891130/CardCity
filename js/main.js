@@ -1,12 +1,13 @@
 import { state, setState, soundEnabled, setSoundEnabled, playSound, message } from './state.js';
-import { HAND_LIMIT, TERRAIN_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG} from './config.js';
-import { rand, calculate, terrainMap, initDeck, shuffle, drawFromDeck, getDeckComposition, makeShop, rebuildShop, calculateTotalScore, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
+import { HAND_LIMIT, LANDFORM_NAMES, BIOME_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG} from './config.js';
+import { rand, calculate, terrainMap, initDeck, shuffle, drawFromDeck, getDeckComposition, makeShop, rebuildShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
-import { renderBoard, renderHand, renderShop, renderMissions, updateMissionTabNotification, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip } from './render.js';
+import { renderBoard, renderHand, renderShop, renderMissions, updateMissionTabNotification, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia } from './render.js';
 import { TREES, renderTree, openTreeModal, closeTreeModal, unlockSelectedNode } from './trees.js';
 import { writeSave, readSave, applySave } from './save.js';
 import { initKeyboard, SHORTCUT_LIST } from './keys.js';
 import { validateCards } from './validate.js';
+import { describeCard } from './effects.js';
 
 const $ = id => document.getElementById(id);
 
@@ -29,6 +30,7 @@ function render(){
     case 'tech':    renderTree('tech', id => openTreeModal('tech', id)); break;
     case 'culture': renderTree('culture', id => openTreeModal('culture', id)); break;
     case 'missions': renderMissions(claimMission); break;
+	case 'encyclopedia': renderEncyclopedia(); break;
   }
 }
 
@@ -60,7 +62,27 @@ function renderStats(){
   $('faithStat').textContent = `${state.faith} (+${state.perTurn.faithPoints})`;
   $('techPointsHeaderStat').textContent = `${state.techPoints} (+${state.perTurn.techPoints})`;
   $('culturePointsHeaderStat').textContent = `${state.culturePoints} (+${state.perTurn.culturePoints})`;
-  $('scoreStat').textContent = calculateTotalScore();
+  
+  // 🌟 更新總積分與下一次目標門檻提示
+  const totalScore = calculateTotalScore();
+  $('scoreStat').textContent = totalScore;
+
+  const milestone = getNextMilestone();
+  const hintEl = $('scoreTargetHint');
+  if (hintEl) {
+    if (milestone) {
+      if (milestone.remaining > 0) {
+        hintEl.textContent = `第 ${milestone.turn} 回合需 ${milestone.targetScore}★ (還差 ${milestone.remaining}★)`;
+        hintEl.style.color = 'var(--orange)';
+      } else {
+        hintEl.textContent = `第 ${milestone.turn} 回合門檻達標！(${milestone.targetScore}★)`;
+        hintEl.style.color = 'var(--green)';
+      }
+    } else {
+      hintEl.textContent = '已達成所有階段目標！';
+      hintEl.style.color = 'var(--green)';
+    }
+  }
 }
 
 function renderCityTab(){
@@ -93,8 +115,9 @@ function onBoardCellClick(c){
     let d = CARDS[c.building];
     message(`已選取 ${d.emoji} ${d.name} (Lv.${c.level||1})，可在右側「建築資訊」面板升級或拆除。`);
   } else {
-    let terrainName = TERRAIN_NAMES[c.terrain];
-    message(`已選取 ${terrainName}地形 (座標 ${c.x}, ${c.y})｜選擇手牌後可在此建造。`);
+    let terrainName = LANDFORM_NAMES[c.landform];
+    let biomeName = BIOME_NAMES[c.biome];
+    message(`已選取 ${terrainName}・${biomeName} (座標 ${c.x}, ${c.y})｜選擇手牌後可在此建造。`);
   }
   render();
 }
@@ -107,50 +130,122 @@ function onHandCardClick(card){
   message(state.selected ? `已選擇 ${d.name}，請點擊棋盤。` : '已取消選牌。');
 }
 
+// ===== 牌庫檢視與排序功能 =====
 function openDeckModal() {
   const deckInfo = getDeckComposition();
   const container = $('deckModalContent');
+  const sortSelect = $('deckSortSelect');
   if(!container) return;
 
-  container.innerHTML = `<div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:6px;">牌庫總剩餘張數：<span style="color:var(--gold);">${deckInfo.total} 張</span></div>`;
+  container.innerHTML = `<div style="font-size:13px; font-weight:bold; color:var(--text); margin-bottom:6px;">牌庫總剩餘張數：<span style="color:var(--gold);">${deckInfo.total} 張</span> <span style="font-size:11px; color:var(--muted); font-weight:normal;">(點擊卡牌可查看詳細效果)</span></div>`;
 
-  let listHtml = '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:8px;">';
-  
+  // 1. 把 counts 物件轉成陣列以便進行 sort 排序
+  let cardEntries = [];
   for(const cardId in deckInfo.counts) {
-	const cardData = CARDS[cardId];
-	if(!cardData) continue;
-	const count = deckInfo.counts[cardId];
-  
-	let rarityKey = cardData.rarity || 'common';
-	let rarityInfo = RARITY_CONFIG[rarityKey] || RARITY_CONFIG.common;
+    const cardData = CARDS[cardId];
+    if(!cardData) continue;
+    cardEntries.push({
+      cardId: cardId,
+      cardData: cardData,
+      count: deckInfo.counts[cardId]
+    });
+  }
 
-	listHtml += `
-		<div style="display:flex; align-items:center; justify-content:space-between; background:#101820; padding:8px 12px; border-radius:6px; border:1px solid var(--line); border-left: 4px solid ${rarityInfo.color};">
-		<div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-size:20px;">${cardData.emoji}</span>
-        <div>
-          <div style="font-size:13px; color:var(--text); font-weight:bold;">
-            ${cardData.name} <span style="font-size:10px; color:${rarityInfo.color};">[${rarityInfo.name}]</span>
+  // 2. 根據下拉選單的排序依據進行排序
+  const sortBy = sortSelect ? sortSelect.value : 'costAsc';
+  
+  // 定義稀有度權重（傳說 > 罕見 > 稀有 > 普通）
+  const rarityWeight = { legendary: 4, epic: 3, rare: 2, common: 1 };
+
+  cardEntries.sort((a, b) => {
+    if (sortBy === 'rarityDesc') {
+      let wA = rarityWeight[a.cardData.rarity || 'common'] || 1;
+      let wB = rarityWeight[b.cardData.rarity || 'common'] || 1;
+      if (wB !== wA) return wB - wA;
+      return a.cardData.cost.gold - b.cardData.cost.gold;
+    } else if (sortBy === 'rarityAsc') {
+      let wA = rarityWeight[a.cardData.rarity || 'common'] || 1;
+      let wB = rarityWeight[b.cardData.rarity || 'common'] || 1;
+      if (wB !== wA) return wA - wB;
+      return a.cardData.cost.gold - b.cardData.cost.gold;
+    } else if (sortBy === 'costAsc') {
+      return a.cardData.cost.gold - b.cardData.cost.gold;
+    } else if (sortBy === 'costDesc') {
+      return b.cardData.cost.gold - a.cardData.cost.gold;
+    } else if (sortBy === 'name') {
+      return a.cardData.name.localeCompare(b.cardData.name, 'zh-Hant');
+    } else if (sortBy === 'count') {
+      return b.count - a.count;
+    }
+    return 0;
+  });
+
+  // 3. 組合 HTML 渲染（加上 deck-card-item 與 deck-card-desc 結構）
+  let listHtml = '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:8px;">';
+  
+  cardEntries.forEach(item => {
+    const cardData = item.cardData;
+    const count = item.count;
+    
+    let rarityKey = cardData.rarity || 'common';
+    let rarityInfo = RARITY_CONFIG[rarityKey] || RARITY_CONFIG.common;
+    
+    // 取得卡片效果說明文字
+    const descText = describeCard(cardData);
+    const landformText = cardData.landforms ? cardData.landforms.map(l => LANDFORM_NAMES[l] || l).join('、') : '不限';
+    const biomeText = cardData.biomes ? cardData.biomes.map(b => BIOME_NAMES[b] || b).join('、') : '不限';
+
+    listHtml += `
+      <div class="deck-card-item" style="border-left: 4px solid ${rarityInfo.color};">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:20px;">${cardData.emoji}</span>
+            <div>
+              <div style="font-size:13px; color:var(--text); font-weight:bold;">
+                ${cardData.name} <span style="font-size:10px; color:${rarityInfo.color};">[${rarityInfo.name}]</span>
+              </div>
+              <div style="font-size:10px; color:var(--muted);">${cardData.type}建築 · 費用 ${cardData.cost.gold}◈ / ${cardData.cost.pop}👤</div>
+            </div>
           </div>
-          <div style="font-size:10px; color:var(--muted);">${cardData.type}建築 · 費用 ${cardData.cost.gold}◈</div>
+          <div style="text-align:right;">
+            <span style="font-size:14px; font-weight:bold; color:${count > 0 ? 'var(--green)' : 'var(--muted)'};">${count} 張</span>
+          </div>
         </div>
-		</div>
-		<div style="text-align:right;">
-        <span style="font-size:14px; font-weight:bold; color:${count > 0 ? 'var(--green)' : 'var(--muted)'};">${count} 張</span>
-		</div>
-		</div>
-  `;
-}
+        <!-- 點擊後展開的詳細說明區塊 -->
+        <div class="deck-card-desc">
+          <div><b>效果：</b>${descText}</div>
+          <div style="margin-top:3px; color:var(--blue);"><b>限制：</b>地形[${landformText}] · 地貌[${biomeText}]</div>
+        </div>
+      </div>
+    `;
+  });
   listHtml += '</div>';
   container.innerHTML += listHtml;
+
+  // 4. 綁定每個卡片項目的點擊展開/收合事件
+  container.querySelectorAll('.deck-card-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const isExpanded = el.classList.toggle('expanded');
+      const descBox = el.querySelector('.deck-card-desc');
+      if (descBox) {
+        descBox.style.display = isExpanded ? 'block' : 'none';
+      }
+    });
+  });
 
   $('deckModalBackdrop').classList.add('show');
 }
 
-// 事件綁定
-$('viewDeckBtn').addEventListener('click', openDeckModal);
-$('deckModalClose').addEventListener('click', () => $('deckModalBackdrop').classList.remove('show'));
-$('deckModalConfirmBtn').addEventListener('click', () => $('deckModalBackdrop').classList.remove('show'));
+// 4. 事件綁定（新增排序選單的 change 監聽，讓玩家切換時立即重新整理列表）
+$('viewDeckBtn').addEventListener('click', () => openDeckModal());
+$('deckModalClose').addEventListener('click', () =>$('deckModalBackdrop').classList.remove('show'));
+$('deckModalConfirmBtn').addEventListener('click', () =>$('deckModalBackdrop').classList.remove('show'));
+if ($('deckSortSelect')) {$('deckSortSelect').addEventListener('change', () => {
+    if ($('deckModalBackdrop').classList.contains('show')) {
+      openDeckModal(); // 重新渲染以套用新排序
+    }
+  });
+}
 
 // ===== 格子預覽：選牌後滑過格子，顯示「放在這裡會有什麼變化」=====
 function onCellPointer(c, ev){
@@ -241,7 +336,7 @@ function startGame(){
   pendingDemolish = null;
   
   render();
-  message('歡迎遊玩 Card City 模組化版本！');
+  message('歡迎遊玩 Card City ！');
 }
 
 function claimMission(instanceId) {
@@ -310,11 +405,19 @@ $('endTurnBtn').addEventListener('click', () => {
   endTurn();
   if(state.gameOver) {
     const breakdown = getScoreBreakdown().map(e => `${e.label}：${e.value}`).join('、');
-    $('modalTitle').textContent = '城市建設完成！';
-    $('modalText').textContent = `總積分 ${calculateTotalScore()} ★（${breakdown}）。`;
+    
+    // 判斷是失敗結局還是成功通關
+    if (state.failReason) {
+      $('modalTitle').textContent = '💀 遊戲失敗';
+      $('modalText').textContent = `${state.failReason}\n\n最終結算：總積分 ${calculateTotalScore()} ★（${breakdown}）。`;
+    } else {
+      $('modalTitle').textContent = '🎉 城市建設圓滿成功！';
+      $('modalText').textContent = `成功撐過 30 回合！總積分 ${calculateTotalScore()} ★（${breakdown}）。`;
+    }
+    
     $('modalBackdrop').classList.add('show');
   } else {
-    checkRandomEvent(); // 👈 檢查並觸發隨機事件
+    checkRandomEvent(); // 檢查隨機事件
   }
   render();
 });

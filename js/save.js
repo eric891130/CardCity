@@ -51,12 +51,28 @@ function migrateSave(data) {
   }
   if(v < 2) {
     // v1 → v2：產出改以 OUTPUTS 的 id 命名，並拆成「每回合資源」與「最終分數」兩套
-    //   bonusCulture（建造時永久獲得的文化分） → bonusScore.cultureScore
-    //   assets / income / food / turnXxxIncome 等舊的衍生欄位已移除（讀檔後會由 calculate 重算）
     s.bonusScore = { cultureScore: s.bonusCulture || 0, techScore: 0, faithScore: 0 };
     s.scores = { cultureScore: 0, techScore: 0, faithScore: 0 };
     s.perTurn = {};
     for(const k of ['bonusCulture', 'assets', 'income', 'food', 'turnTechIncome', 'turnCultureIncome', 'turnFaithIncome']) delete s[k];
+  }
+  if(v < 3) {
+    // v2 → v3：舊 terrain 拆成 landform + biome。
+    // 舊 plain → 平原草原；forest → 平原森林；water → 河流濕地；mountain → 山地雪地。
+    const legacy = {
+      plain: { landform:'plain', biome:'grassland' },
+      forest: { landform:'plain', biome:'forest' },
+      water: { landform:'river', biome:'wetland' },
+      mountain: { landform:'mountain', biome:'snow' }
+    };
+    for(const cell of s.board || []) {
+      if(!cell.landform || !cell.biome) {
+        const converted = legacy[cell.terrain] || { landform:'plain', biome:'grassland' };
+        cell.landform = cell.landform || converted.landform;
+        cell.biome = cell.biome || converted.biome;
+      }
+      delete cell.terrain;
+    }
   }
 
   data.version = SAVE_VERSION;

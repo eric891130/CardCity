@@ -31,6 +31,8 @@ function requirementsMet(meta, node) {
 }
 
 // ---------- 繪製 ----------
+// 橫向排版：依「層級」由左到右排成一欄一欄（第 0 層在最左邊），
+// 前置關係的連線從左邊節點的「右側」連到右邊節點的「左側」。
 export function renderTree(kind, onNodeClick) {
   const meta = TREES[kind], tree = meta.tree, p = meta.prefix;
   const el = $(meta.containerId);
@@ -38,9 +40,15 @@ export function renderTree(kind, onNodeClick) {
   el.innerHTML = '';
   $(meta.pointsStatId).textContent = `${meta.icon} ${state[meta.pointsKey]} 點`;
 
+  // 外層負責橫向捲動：層級變多、寬度超過面板時不會被裁掉。
+  // 連線的 SVG 畫在 wrapper 裡、跟節點一起捲動，所以量到的座標永遠正確。
+  const scroller = document.createElement('div');
+  scroller.style.cssText = 'width:100%; overflow-x:auto; overflow-y:hidden;';
+
   const wrapper = document.createElement('div');
   wrapper.className = 'tech-tree-wrapper';
-  wrapper.style.position = 'relative';
+  // 蓋過 CSS 裡縱向排版用的 flex column：寬度由內容撐開，但至少填滿整個面板
+  wrapper.style.cssText = 'position:relative; display:block; width:max-content; min-width:100%; box-sizing:border-box;';
 
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
@@ -64,7 +72,7 @@ export function renderTree(kind, onNodeClick) {
   svg.appendChild(defs);
   wrapper.appendChild(svg);
 
-  // 依「前置節點的最深層級 + 1」決定每個節點在第幾列
+  // 依「前置節點的最深層級 + 1」決定每個節點在第幾欄
   const levels = {};
   const getLevel = id => {
     if(levels[id] !== undefined) return levels[id];
@@ -78,12 +86,14 @@ export function renderTree(kind, onNodeClick) {
   for(const id in tree) (tierMap[levels[id]] = tierMap[levels[id]] || []).push(id);
 
   const maxLevel = Math.max(...Object.keys(tierMap).map(Number));
-  const rowsContainer = document.createElement('div');
-  rowsContainer.style.cssText = 'display:flex; flex-direction:column; gap:40px; width:100%; z-index:2; position:relative;';
+  // 所有欄由左到右排成一列；欄與欄之間留出空間給連線與箭頭。align-items:center → 節點比較少的欄會垂直置中
+  const columns = document.createElement('div');
+  columns.style.cssText = 'display:flex; flex-direction:row; align-items:center; justify-content:center; gap:80px; position:relative; z-index:2;';
 
   for(let lvl = 0; lvl <= maxLevel; lvl++) {
-    const row = document.createElement('div');
-    row.className = 'tech-row';
+    const col = document.createElement('div');
+    col.className = 'tech-col';
+    col.style.cssText = 'display:flex; flex-direction:column; justify-content:center; gap:24px;';
     tierMap[lvl].forEach(id => {
       const node = tree[id];
       const canUnlock = state[meta.pointsKey] >= node.cost && requirementsMet(meta, node);
@@ -93,14 +103,15 @@ export function renderTree(kind, onNodeClick) {
       div.className = `tech-node ${statusClass}`;
       div.innerHTML = `<span class="tech-icon">${node.icon}</span><span class="tech-name">${node.name}</span>`;
       div.addEventListener('click', () => { if(onNodeClick) onNodeClick(id); });
-      row.appendChild(div);
+      col.appendChild(div);
     });
-    rowsContainer.appendChild(row);
+    columns.appendChild(col);
   }
-  wrapper.appendChild(rowsContainer);
-  el.appendChild(wrapper);
+  wrapper.appendChild(columns);
+  scroller.appendChild(wrapper);
+  el.appendChild(scroller);
 
-  // 節點排版完成後，量測位置再畫出前置關係的連線
+  // 節點排版完成後，量測位置再畫出前置關係的連線：左節點右側中點 → 右節點左側中點（水平的 S 形曲線）
   requestAnimationFrame(() => {
     const wrapperRect = wrapper.getBoundingClientRect();
     for(const id in tree) {
@@ -112,13 +123,13 @@ export function renderTree(kind, onNodeClick) {
         if(!parentEl || !childEl) return;
         const pRect = parentEl.getBoundingClientRect();
         const cRect = childEl.getBoundingClientRect();
-        const x1 = pRect.left + pRect.width / 2 - wrapperRect.left;
-        const y1 = pRect.bottom - wrapperRect.top;
-        const x2 = cRect.left + cRect.width / 2 - wrapperRect.left;
-        const y2 = cRect.top - wrapperRect.top;
-        const midY = (y1 + y2) / 2;
+        const x1 = pRect.right - wrapperRect.left;
+        const y1 = pRect.top + pRect.height / 2 - wrapperRect.top;
+        const x2 = cRect.left - wrapperRect.left;
+        const y2 = cRect.top + cRect.height / 2 - wrapperRect.top;
+        const midX = (x1 + x2) / 2;
         const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`);
+        path.setAttribute('d', `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`);
         path.setAttribute('stroke', 'var(--line)');
         path.setAttribute('stroke-width', '2');
         path.setAttribute('fill', 'none');

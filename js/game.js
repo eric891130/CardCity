@@ -1,20 +1,38 @@
 import { state, playSound, message } from './state.js';
-import { RARITY_CONFIG , CARDS, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN } from './config.js';
+import { RARITY_CONFIG , CARDS, LANDFORM_NAMES, BIOME_NAMES, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN, TURN_SCORE_MILESTONES } from './config.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
-import { computeCellStats, computeOnBuild, unlockedBuildingIds } from './effects.js';
+import { computeCellStats, computeOnBuild, unlockedBuildingIds, activeTreeEffects } from './effects.js';
 
 export function rand(a){return a[Math.floor(Math.random()*a.length)]}
 export function shuffle(a){let b=[...a];for(let i=b.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]}return b}
 export function newCard(id){return {id:crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random()),type:id}}
 
 export function terrainMap(){
-  let map=[];
-  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
-    let r=Math.random(),t=r<.12?'water':r<.24?'mountain':r<.40?'forest':'plain';
-    map.push({x,y,terrain:t,building:null,level: 1,stats:{}})
+  const map=[];
+  for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+    // 先生成地形，再依地形挑選較合理的地貌。河流固定使用濕地。
+    const r=Math.random();
+    let landform = r < 0.08 ? 'river' : r < 0.23 ? 'mountain' : r < 0.43 ? 'hill' : 'plain';
+    let biome;
+    if(landform === 'river') biome = 'wetland';
+    else if(landform === 'mountain') biome = rand(['snow','forest','grassland']);
+    else if(landform === 'hill') biome = rand(['forest','grassland','desert','snow']);
+    else biome = rand(['grassland','grassland','forest','forest','desert','snow']);
+    map.push({x,y,landform,biome,building:null,level:1,stats:{}});
   }
   return map;
 }
+
+// 建築放置限制：地形與地貌分開判斷；未設定的欄位代表不限。
+export function matchesLand(cell, card){
+  const landformOK = !card.landforms || card.landforms.includes(cell.landform);
+  const biomeOK = !card.biomes || card.biomes.includes(cell.biome);
+  return landformOK && biomeOK;
+}
+export function landDescription(cell){
+  return `${LANDFORM_NAMES[cell.landform] || cell.landform}・${BIOME_NAMES[cell.biome] || cell.biome}`;
+}
+
 
 // 各種「依 OUTPUTS 建立的空記錄」：scores / bonusScore 的 key 就是 OUTPUTS 裡 group:'score' 的 id
 export function zeroScores(){
@@ -25,9 +43,36 @@ export function zeroScores(){
 
 // 目前可抽到的卡池 = 基礎卡池 + 已研發科技/文化解鎖的建築（由解鎖旗標即時推導，不修改 cardPool）
 export function availableCardPool(){
-  const pool = [...cardPool];
-  for(const b of unlockedBuildingIds()) if(!pool.includes(b)) pool.push(b);
+  let pool = [...cardPool];
+  const treeEffects = activeTreeEffects();
+
+  treeEffects.forEach(e => {
+    if (e.type === 'unlockBuilding') {
+      const mode = e.mode || 'addPool'; // 若沒寫預設為 addPool
+
+      if (mode === 'addPool') {
+        // 模式 2：直接加入卡池
+        if (!pool.includes(e.target)) pool.push(e.target);
+      } else if (mode === 'replacePool' && e.replaces) {
+        // 模式 3：用新建築替換卡池中的舊建築
+        pool = pool.map(id => id === e.replaces ? e.target : id);
+        // 如果舊建築不在卡池但新建築也沒進去，確保新建築加入
+        if (!pool.includes(e.target)) pool.push(e.target);
+      }
+      // 模式 1 (upgradeOnly)：什麼都不做，不加入 pool，因此抽不到
+    }
+  });
+
   return pool;
+}
+// 判斷某個建築目前是否「已解鎖」（可用於升級檢核）
+export function isBuildingUnlocked(buildingId) {
+  // 1. 如果在初始基礎卡池中，預設已解鎖
+  if (cardPool.includes(buildingId)) return true;
+
+  // 2. 檢查科技/文化樹是否有解鎖該建築
+  const treeEffects = activeTreeEffects();
+  return treeEffects.some(e => e.type === 'unlockBuilding' && e.target === buildingId);
 }
 
 // 依稀有度取得牌庫張數
@@ -165,7 +210,7 @@ export function canAfford(type){
 export function canPlace(card,cell){
   const d=CARDS[card.type];
   if(cell.building) return false;
-  if(!d.terrain.includes(cell.terrain)) return false;
+  if(!matchesLand(cell, d)) return false;
   return canAfford(card.type);
 }
 
@@ -189,18 +234,18 @@ export function previewPlacement(card, cell){
   const result = { reason:null, delta:null, once:null };
 
   if(cell.building){ result.reason = '這格已經有建築。'; return result; }
-  if(!d.terrain.includes(cell.terrain)){ result.reason = `${d.name}不能放在${TERRAIN_NAMES[cell.terrain]}上。`; return result; }
+  if(!matchesLand(cell, d)){ result.reason = `${d.name}不能建在${landDescription(cell)}。`; return result; }
   if(state.gameOver) result.reason = '遊戲已結束。';
   else if(state.gold < d.cost.gold) result.reason = `金幣不足（需要 ${d.cost.gold} ◈，目前 ${state.gold} ◈）。`;
   else if(state.population < d.cost.pop) result.reason = `可用人口不足（需要 ${d.cost.pop} 👤，目前 ${state.population} 👤）。`;
 
   calculate();
   const before = snapshotTotals();
-  const prevLevel = cell.level, prevTerrain = cell.terrain;
+  const prevLevel = cell.level, prevBiome = cell.biome;
   try{
     cell.building = card.type;
     cell.level = 1;
-    if(cell.terrain === 'forest') cell.terrain = 'plain';   // 與 placeCard 一致：蓋在森林上會變成平原
+    if(cell.biome === 'forest') cell.biome = 'grassland'; // 開發森林後保留地形，只把地貌改為草原
     calculate();
     const after = snapshotTotals();
     result.delta = {};
@@ -208,7 +253,7 @@ export function previewPlacement(card, cell){
   } finally {
     cell.building = null;
     cell.level = prevLevel;
-    cell.terrain = prevTerrain;
+    cell.biome = prevBiome;
     calculate();
   }
 
@@ -238,14 +283,14 @@ export function placeCard(card,cell){
   if(state.gameOver)return false;
   let d=CARDS[card.type];
   if(cell.building){message('這格已經有建築！',true);return false;}
-  if(!d.terrain.includes(cell.terrain)){message(`${d.name}不能放在${TERRAIN_NAMES[cell.terrain]}上。`,true);return false;}
+  if(!matchesLand(cell, d)){message(`${d.name}不能建在${landDescription(cell)}。`,true);return false;}
   if(state.gold < d.cost.gold){message('金幣不足！',true);return false;}
   if(state.population < d.cost.pop){message('可用人口（勞動力）不足！請先建造住宅。',true);return false;}
 
   state.gold -= d.cost.gold;
   cell.building=card.type;
   cell.level=1;
-  if(cell.terrain==='forest') cell.terrain='plain';
+  if(cell.biome==='forest') cell.biome='grassland';
   const gains = computeOnBuild(card.type, cell);
   if(Object.keys(gains).length){
     applyGains(gains);
@@ -273,34 +318,85 @@ export function demolishCell(cell) {
   return true;
 }
 
-export function upgradeInspectedBuilding() {
+export function upgradeInspectedBuilding(targetChoiceId = null) {
   if(!state.inspectedCell) return false;
   let c = state.board.find(cell => cell.x === state.inspectedCell.x && cell.y === state.inspectedCell.y);
   if(!c || !c.building) { message('未選取有效建築。', true); return false; }
 
   let d = CARDS[c.building];
-  let maxLevel = 3;
-  let currentLevel = c.level || 1;
-
-  if(currentLevel >= maxLevel) {
-    message(`${d.name} 已經達到最高等級 (Lv.${maxLevel})！`, true);
-    return false;
-  }
-
-  let upgradeCost = d.cost.gold * currentLevel;
-  if(state.gold < upgradeCost) {
-    message(`金幣不足！升級需要 ${upgradeCost} ◈（目前擁有 ${state.gold} ◈）。`, true);
-    return false;
-  }
-
-  state.gold -= upgradeCost;
-  c.level = currentLevel + 1;
   
+  // 1. 檢查是否有填寫升級目標
+  if(!d.upgradesTo || (Array.isArray(d.upgradesTo) && d.upgradesTo.length === 0)) {
+    message(`${d.name} 已達最終形態，無法繼續升級。`, true);
+    return false;
+  }
+
+  // 2. 確定升級目標 ID
+  let targetCardId = Array.isArray(d.upgradesTo) ? (targetChoiceId || d.upgradesTo[0]) : d.upgradesTo;
+  let targetCard = CARDS[targetCardId];
+  
+  if(!targetCard) {
+    message('找不到指定的升級目標建築設定。', true);
+    return false;
+  }
+
+  // 3. 🔍 【新增升級解鎖檢測】檢測玩家是否已經解鎖該目標建築
+  if (!isBuildingUnlocked(targetCardId)) {
+    message(`尚未解鎖 ${targetCard.emoji} ${targetCard.name}！請先在科技或文化樹研發對應技術。`, true);
+    return false;
+  }
+
+  // 💡 注意：這裡故意「不檢查」 targetCard 的 landforms 與 biomes 限制，
+  // 保持玩家可以無視地形限制將舊建築原地改造升級的趣味性！
+
+  // 4. 計算升級花費與人口勞動力差值
+  let upgradeCost = d.upgradeCost ? d.upgradeCost.gold : targetCard.cost.gold;
+  if(state.gold < upgradeCost) {
+    message(`金幣不足！升級為 ${targetCard.name} 需要 ${upgradeCost} ◈（目前擁有 ${state.gold} ◈）。`, true);
+    return false;
+  }
+
+  let popDiff = (targetCard.cost.pop || 0) - (d.cost.pop || 0);
+  if(popDiff > 0 && state.population < popDiff) {
+    message(`可用人口不足！升級為 ${targetCard.name} 需要額外 ${popDiff} 👤 勞動力。`, true);
+    return false;
+  }
+
+  // 5. 執行升級轉職
+  state.gold -= upgradeCost;
+  c.building = targetCardId;
+  c.level = 1;
+  c.stats = {};
+
   playSound('coin');
   calculate();
-  message(`成功將 ${d.name} 升級至 Lv.${c.level}！`, false, true);
-  addLog(`將 ${d.name}（(${c.x},${c.y})）升級至 Lv.${c.level}（-${upgradeCost} ◈）。`);
+  message(`成功將 ${d.name} 升級改造為 ${targetCard.emoji} ${targetCard.name}！`, false, true);
+  addLog(`將 ${d.name}（(${c.x},${c.y})）升級改造為 ${targetCard.name}（-${upgradeCost} ◈）。`);
   return true;
+}
+
+// 取得下一個階段性目標資訊：回傳 { turn, targetScore, remaining }，若沒有下一個門檻則回傳 null
+export function getNextMilestone() {
+  const currentTurn = state.turn;
+  const currentScore = calculateTotalScore();
+  
+  // 找出比目前回合大的下一個門檻回合
+  const upcomingTurns = Object.keys(TURN_SCORE_MILESTONES)
+    .map(Number)
+    .filter(t => t >= currentTurn)
+    .sort((a, b) => a - b);
+
+  if (upcomingTurns.length === 0) return null; // 沒有後續門檻
+
+  const targetTurn = upcomingTurns[0];
+  const targetScore = TURN_SCORE_MILESTONES[targetTurn];
+  const remaining = Math.max(0, targetScore - currentScore);
+
+  return {
+    turn: targetTurn,
+    targetScore: targetScore,
+    remaining: remaining
+  };
 }
 
 export function endTurn(){
@@ -318,18 +414,44 @@ export function endTurn(){
     addLog(`糧食結算：產出 ${state.perTurn.food}，消耗 ${state.maxPopulation}，目前存糧：${state.storedFood}`);
   }
 
-  // 其餘資源：每回合產出累積進對應的 state 欄位（金幣、文化點、科技點、信仰點…）
+  // 其餘資源：每回合產出累積進對應的 state 欄位
   for(const id in state.perTurn){
     if(id === 'food') continue;
     state[OUTPUTS[id].stateKey] += state.perTurn[id];
   }
   playSound('coin');
   
+  // 💀 【失敗機制 1：人口歸零判定】
+  // 假設當可用人口（state.population）為 0 且人口流失達到上限，或者 maxPopulation 降到 0 以下時判定失敗
+  // 這裡我們設定：當可用人口歸零，且是因為連續飢荒導致人口流失過多（例如 lostPopulation 達到或超過 basePopulation）
+  if (state.maxPopulation <= 0 || (state.lostPopulation >= state.basePopulation)) {
+    state.gameOver = true;
+    state.failReason = '人口完全歸零與流失，城市宣告荒廢！';
+    addLog(`💀 遊戲失敗：城市人口歸零，走向毀滅。`);
+    return;
+  }
+
   state.turn++;
   state.selected = null;
 
+  // 💀 【失敗機制 2：第 10 與第 20 回合分數門檻檢查】
+  // 注意：此時 state.turn 已經 +1 了（例如剛結束第 10 回合，目前是準備進入第 11 回合）
+  const checkingTurn = state.turn - 1;
+  if (TURN_SCORE_MILESTONES[checkingTurn]) {
+    const requiredScore = TURN_SCORE_MILESTONES[checkingTurn];
+    const currentScore = calculateTotalScore();
+    if (currentScore < requiredScore) {
+      state.gameOver = true;
+      state.failReason = `第 ${checkingTurn} 回合結束時總積分未達標（目標 ${requiredScore} ★，實際 ${currentScore} ★）。`;
+      addLog(`💀 遊戲失敗：${state.failReason}`);
+      return;
+    }
+  }
+
   if(state.turn > MAX_TURNS){
     state.gameOver = true;
+    state.failReason = null; // null 代表正常通關
+    addLog(`🎉 成功撐過 30 回合，遊戲勝利！`);
   } else {
     // 1. 保留鎖定的手牌，並抽新牌補充
     state.hand = state.hand.filter(c => c.locked);
@@ -337,7 +459,7 @@ export function endTurn(){
       state.hand.push(drawFromDeck());
     }
 
-    // 2. 每回合開始重置商店：保留鎖定的項目，其餘重新產生
+    // 2. 每回合開始重置商店
     rebuildShop();
   }
 }

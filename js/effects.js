@@ -10,7 +10,7 @@
 //    amount  每單位產出多少
 //    target  對象建築：單一 id、id 陣列、或 'any'（任何建築）
 // ============================================================================
-import { CARDS, OUTPUTS, TERRAIN_NAMES, TECH_TREE, CULTURE_TREE } from './config.js';
+import { CARDS, OUTPUTS, LANDFORM_NAMES, BIOME_NAMES, TECH_TREE, CULTURE_TREE } from './config.js';
 import { neighbors, buildingsWithin, countMatching, uniqueBuildingTypes, matchesTarget, targetList } from './board.js';
 
 // ---------- 建築效果 ----------
@@ -41,10 +41,15 @@ export const EFFECT_TYPES = {
     count: (e, cell) => neighbors(cell).filter(n => matchesTarget(n.building, e.target)).length,
     cond: e => `每座相鄰的${names(e.target)}${capText(e, '座')}`
   },
-  adjacentTerrain: {
-    title: '相鄰地形加成', phase: 'own', needs: ['terrain'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
-    count: (e, cell) => neighbors(cell).filter(n => n.terrain === e.terrain).length,
-    cond: e => `每格相鄰的${TERRAIN_NAMES[e.terrain] || e.terrain}${capText(e, '格')}`
+  adjacentLandform: {
+    title: '相鄰地形加成', phase: 'own', needs: ['landform'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
+    count: (e, cell) => neighbors(cell).filter(n => n.landform === e.landform).length,
+    cond: e => `每格相鄰的${LANDFORM_NAMES[e.landform] || e.landform}${capText(e, '格')}`
+  },
+  adjacentBiome: {
+    title: '相鄰地貌加成', phase: 'own', needs: ['biome'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
+    count: (e, cell) => neighbors(cell).filter(n => n.biome === e.biome).length,
+    cond: e => `每格相鄰的${BIOME_NAMES[e.biome] || e.biome}${capText(e, '格')}`
   },
   radiusBuilding: {
     title: '範圍內建築加成', phase: 'own', needs: ['radius', 'target'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
@@ -75,7 +80,7 @@ export const EFFECT_TYPES = {
 
 // ---------- 科技 / 文化樹的效果 ----------
 export const TREE_EFFECT_TYPES = {
-  unlockBuilding: { title: '解鎖建築', needs: ['target'], optional: [] },
+  unlockBuilding: { title: '解鎖建築', needs: ['target'], optional: ['mode', 'replaces'] },
   buildingBonus:  { title: '指定建築的固定加成（不隨等級成長）', needs: ['target', 'output', 'amount'], optional: [] },
   effectBoost:    { title: '強化某建築的某種效果', needs: ['target', 'effectType', 'amount'], optional: [] }
 };
