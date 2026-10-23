@@ -24,6 +24,7 @@ export const TREES = {
   }
 };
 
+
 const selectedNode = { tech: null, culture: null };
 
 function requirementsMet(meta, node) {
@@ -179,6 +180,18 @@ export function closeTreeModal(kind) {
   $(`${TREES[kind].prefix}ModalBackdrop`).classList.remove('show');
 }
 
+export function hasResearchableNodes(kind) {
+  const meta = TREES[kind];
+  if(!meta || !meta.tree) return false;
+  for(const id in meta.tree) {
+    const node = meta.tree[id];
+    if(!node.unlocked && requirementsMet(meta, node) && state[meta.pointsKey] >= node.cost) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ---------- 解鎖 ----------
 export function unlockSelectedNode(kind, onDone) {
   const meta = TREES[kind], id = selectedNode[kind];
@@ -188,15 +201,36 @@ export function unlockSelectedNode(kind, onDone) {
   if(!requirementsMet(meta, node)) return;
   if(state[meta.pointsKey] < node.cost) return;
 
-  // 若這個節點解鎖了新建築，且卡池原本沒有 → 直接把 2 張新卡放進目前牌堆
-  // 這個節點解鎖的建築裡，目前卡池還沒有的 → 研發後直接各放 2 張進牌堆
-  const newBuildings = (node.effects || []).filter(e => e.type === 'unlockBuilding').map(e => e.target)
-    .filter(b => !availableCardPool().includes(b));
-
   state[meta.pointsKey] -= node.cost;
   node.unlocked = true;
   state[meta.unlockedKey].push(id);
-  for(const b of newBuildings) addCardsToDeck(b, 2);
+
+  // 處理該節點帶有的解鎖效果
+  (node.effects || []).forEach(e => {
+    if (e.type === 'unlockBuilding') {
+      if (e.mode === 'replacePool' && e.replaces) {
+        // 1. 將現有牌庫 (state.deck) 裡的舊牌替換成新牌
+        state.deck = state.deck.map(card => {
+          const cType = (typeof card === 'object' && card !== null) ? card.type : card;
+          if (cType === e.replaces) {
+            return typeof card === 'object' ? { ...card, type: e.target } : e.target;
+          }
+          return card;
+        });
+        // 2. 將現有手牌 (state.hand) 裡的舊牌也替換成新牌
+        state.hand = state.hand.map(card => {
+          const cType = (typeof card === 'object' && card !== null) ? card.type : card;
+          if (cType === e.replaces) {
+            return typeof card === 'object' ? { ...card, type: e.target } : e.target;
+          }
+          return card;
+        });
+      } else if (e.mode !== 'upgradeOnly') {
+        // 一般解鎖：加入卡池與牌庫
+          addCardsToDeck(e.target);
+      }
+    }
+  });
 
   playSound('win');
   message(`${meta.successText}：${node.name}！`, false, true);

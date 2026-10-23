@@ -34,8 +34,28 @@ button:hover:not(:disabled){filter:brightness(1.14);transform:translateY(-1px)}b
 .encyclopedia-link:hover {filter: brightness(1.2);}
 
 .layout{display:grid;grid-template-columns:minmax(480px,1.4fr) minmax(340px,1fr);gap:14px;padding:14px 22px 24px;max-width:1600px;margin:auto}.panel{background:#17252eeb;border:1px solid var(--line);border-radius:15px;overflow:hidden;min-width:0}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);gap:10px}.panel-head h2{font-size:15px;margin:0}.panel-head p{margin:3px 0 0;color:var(--muted);font-size:12px}.board-wrap{padding:14px}.board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;max-width:740px;margin:auto}.cell{aspect-ratio:1/1;position:relative;border:1px solid #536b70;border-radius:8px;padding:0;display:flex;align-items:center;justify-content:center;flex-direction:column;overflow:hidden;min-width:0;background:#567b58}
-.cell.landform-plain{background:linear-gradient(145deg,#527d58,#426b4c)}.cell.landform-hill{background:linear-gradient(145deg,#88764e,#66583b)}.cell.landform-river{background:linear-gradient(145deg,#367e9b,#245c7c)}.cell.landform-mountain{background:linear-gradient(145deg,#7c8586,#555f65)}
-.cell.biome-forest{box-shadow:inset 0 0 0 2px #17442b}.cell.biome-desert{background-image:linear-gradient(145deg,#c2a66a,#8f7544)}.cell.biome-snow{background-image:linear-gradient(145deg,#aebfc9,#718793)}.cell.biome-wetland{background-image:linear-gradient(145deg,#438b87,#28645f)}
+
+/* ===== 地形地貌的渲染(會決定渲染順序!越優先的越前面) ===== */
+/* ===== 1. 地貌（Biome）決定格子的「基礎顏色」 ===== */
+.cell.biome-grassland { background-color: #527d58; }
+.cell.biome-forest   { background-color: #3b6b52; }
+.cell.biome-desert   { background-color: #c2a66a; }
+.cell.biome-snow     { background-color: #aebfc9; }
+.cell.biome-water    { background-color: #367e9b; }
+.cell.biome-wetland  { background-color: #438b87; }
+
+/* ===== 2. 地形（Landform）決定格子的「紋理疊加」 ===== */
+/* 平原：保持乾淨，無額外紋理 */
+.cell.landform-plain {background-image: none;}
+/* 丘陵：加上細緻的斜線條紋，製造起伏感 */
+.cell.landform-hill {background-image: repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(0, 0, 0, 0.12) 4px,rgba(0, 0, 0, 0.12) 8px);}
+/* 高山：加上粗獷的點狀紋理與內框陰影，讓高山質感強烈突顯 */
+.cell.landform-mountain {background-image: radial-gradient(circle,rgba(255, 255, 255, 0.25) 20%,transparent 20%);background-size: 6px 6px;box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.3);}
+/* 水域：加上橫向波紋條紋 */
+.cell.landform-water {background-image: repeating-linear-gradient(0deg,transparent,transparent 6px,rgba(255, 255, 255, 0.18) 6px,rgba(255, 255, 255, 0.18) 8px);}
+/* ================================================== */
+
+/* 河流沿棋盤格邊界流動，不再佔據整個格子。 */.river-edge{position:absolute;z-index:3;display:block;background:linear-gradient(90deg,#5cc9ef,#1684c5,#83e4f5);box-shadow:0 0 3px #032d4f;pointer-events:none}.river-n{left:-1px;right:-1px;top:-1px;height:5px}.river-s{left:-1px;right:-1px;bottom:-1px;height:5px}.river-w{top:-1px;bottom:-1px;left:-1px;width:5px}.river-e{top:-1px;bottom:-1px;right:-1px;width:5px}
 .cell.empty{cursor:pointer}.cell.empty:hover{outline:2px solid var(--gold);outline-offset:1px;filter:brightness(1.13)}.cell .terrain{position:absolute;top:3px;left:5px;font-size:10px;opacity:.9}.cell .biome{position:absolute;top:2px;right:4px;font-size:10px;opacity:.95}.cell .emoji{font-size:clamp(18px,3vw,29px);line-height:1.1;text-shadow:0 2px 4px #0007}.cell .bname{font-size:clamp(8px,.9vw,11px);font-weight:700;text-shadow:0 1px 3px #000;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px}.cell .bonus{position:absolute;bottom:3px;right:4px;font-size:9px;background:#10251edb;padding:1px 3px;border-radius:4px;color:#b8ffd7}.cell.selected{outline:3px solid var(--gold);outline-offset:1px}.cell.occupied{border-color:#b7d6c2;box-shadow:inset 0 0 0 1px #10251e80}
 .cell.inspected {border: 2px solid var(--gold) !important; box-shadow: 0 0 10px rgba(212, 160, 23, 0.6);z-index: 2;}
 

@@ -32,12 +32,27 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     }
   };
 
-  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'landforms', 'biomes', 'upgradesTo', 'upgradeCost', 'effects', 'desc'];
+  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'upkeep', 'landforms', 'biomes', 'requiresRiver', 'upgradesTo', 'upgradeCost', 'effects', 'desc'];
   for (const id in cards) {
     const c = cards[id], at = `CARDS.${id}`;
-    if (typeof c.name !== 'string' || !c.name) bad(at, '缺少 name（顯示名稱）。');
+    if (typeof c.name !== 'string' || !c.name) bad(at, '缺少 name。');
     if (typeof c.emoji !== 'string' || !c.emoji) bad(at, '缺少 emoji。');
-    if (!c.cost || !isNum(c.cost.gold) || !isNum(c.cost.pop)) bad(at, 'cost 必須寫成 {gold:數字, pop:數字}（不佔人口就寫 pop:0）。');
+    if (!c.cost || !isNum(c.cost.gold) || !isNum(c.cost.pop) || c.cost.gold < 0) bad(at, 'cost 必須包含非負數的 gold 與 pop。');
+    if (c.upkeep !== undefined && (!isNum(c.upkeep) || c.upkeep < 0)) bad(at, 'upkeep 必須是非負數字。');
+    
+    // 檢查稀有度是否在合法範圍內
+    if (!c.rarity || !['common', 'rare', 'epic', 'legendary'].includes(c.rarity)) {
+      bad(at, `rarity 必須是 common / rare / epic / legendary 其中之一。`);
+    }
+
+    // 檢查升級目標是否真實存在於 CARDS 中
+    if (c.upgradesTo !== undefined) {
+      const targets = Array.isArray(c.upgradesTo) ? c.upgradesTo : [c.upgradesTo];
+      targets.forEach(tId => {
+        if (tId && !(tId in cards)) bad(at, `upgradesTo 中的目標 "${tId}" 不存在於 CARDS 中。`);
+      });
+    }
+	
     if (c.landforms !== undefined) {
       if (!Array.isArray(c.landforms) || !c.landforms.length) bad(at, 'landforms 若有設定，必須是非空陣列。');
       else for (const t of c.landforms) if (!landforms.includes(t)) bad(at, `landforms 裡的 "${t}" 不是有效地形（可用：${landforms.join(' / ')}）。`);
@@ -98,7 +113,9 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
         if (e.type === 'unlockBuilding') { 
           if (typeof e.target === 'string') {
             unlockable.add(e.target);
-            // 👈 如果 mode 是 upgradeOnly，記錄下來，它不需要加入抽牌卡池
+            if (e.mode && !['addPool', 'replacePool', 'upgradeOnly'].includes(e.mode)) {
+              bad(w, `unlockBuilding 的 mode 只能是 addPool, replacePool 或 upgradeOnly。`);
+            }
             if (e.mode === 'upgradeOnly') {
               upgradeOnlyBuildings.add(e.target);
             }

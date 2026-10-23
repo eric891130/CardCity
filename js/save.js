@@ -4,7 +4,7 @@
 //   gameVersion → 遊戲顯示版本（VERSION），僅供除錯參考
 import { state, setState } from './state.js';
 import { TECH_TREE, CULTURE_TREE, SHOP_ITEMS, SIZE, VERSION, SAVE_VERSION, SAVE_KEY, LEGACY_SAVE_KEYS } from './config.js';
-import { getRandomMissions } from './game.js';
+import { getRandomMissions, generateRiverEdges } from './game.js';
 
 export function writeSave() {
   const saveData = { version: SAVE_VERSION, gameVersion: VERSION, state, techTree: {}, cultureTree: {} };
@@ -73,6 +73,19 @@ function migrateSave(data) {
       }
       delete cell.terrain;
     }
+  }
+
+  if(v < 4) {
+    // v3 → v4：河流改為格子邊界上的河段；舊版「河流＋濕地」格轉為「水域＋水域」。
+    for(const cell of s.board || []) {
+      if(cell.landform === 'river') {
+        cell.landform = 'water';
+        cell.biome = 'water';
+      }
+      if(!Array.isArray(cell.riverEdges)) cell.riverEdges = [];
+    }
+    // 舊存檔沒有河段資料，為了讓新規則可用，遷移時補生成一條河流。
+    generateRiverEdges(s.board || []);
   }
 
   data.version = SAVE_VERSION;

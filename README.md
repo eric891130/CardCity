@@ -16,7 +16,3 @@
 ## 開發狀態
 目前仍在持續開發中，歡迎試玩並提供意見回饋。
 
-
-## 地圖資料：地形與地貌
-
-每個棋盤格使用 `landform`（地形）與 `biome`（地貌）兩個欄位。地形 ID：`plain`、`hill`、`mountain`、`river`；地貌 ID：`grassland`、`forest`、`desert`、`snow`、`wetland`。建築可用 `landforms` 與 `biomes` 限制放置位置，省略任一欄位表示該維度不限。效果可使用 `adjacentLandform` 或 `adjacentBiome`。

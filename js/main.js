@@ -2,7 +2,7 @@ import { state, setState, soundEnabled, setSoundEnabled, playSound, message } fr
 import { HAND_LIMIT, LANDFORM_NAMES, BIOME_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG} from './config.js';
 import { rand, calculate, terrainMap, initDeck, shuffle, drawFromDeck, getDeckComposition, makeShop, rebuildShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
-import { renderBoard, renderHand, renderShop, renderMissions, updateMissionTabNotification, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia } from './render.js';
+import { renderBoard, renderHand, renderShop, renderMissions, updateAllTabNotifications, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia, } from './render.js';
 import { TREES, renderTree, openTreeModal, closeTreeModal, unlockSelectedNode } from './trees.js';
 import { writeSave, readSave, applySave } from './save.js';
 import { initKeyboard, SHORTCUT_LIST } from './keys.js';
@@ -23,7 +23,7 @@ function render(){
   renderEpoch++;
   calculate();
   renderStats();
-  updateMissionTabNotification();
+  updateAllTabNotifications();
 
   switch(currentTab){
     case 'city':    renderCityTab(); break;
@@ -39,7 +39,7 @@ function render(){
 function renderStats(){
   $('turnStat').textContent = `${state.turn} / ${MAX_TURNS}`;
   $('phaseStat').textContent = state.gameOver ? '遊戲結束' : '建設階段';
-  $('goldStat').textContent = `${state.gold} (+${state.perTurn.gold})`;
+  $('goldStat').textContent = `${state.gold} (${state.perTurn.gold >= 0 ? '+' : ''}${state.perTurn.gold})`;
   $('incomeStat').textContent = `每回合結算`;
   
   $('popStat').textContent = `${state.population} / ${state.maxPopulation}`;
@@ -193,7 +193,8 @@ function openDeckModal() {
     // 取得卡片效果說明文字
     const descText = describeCard(cardData);
     const landformText = cardData.landforms ? cardData.landforms.map(l => LANDFORM_NAMES[l] || l).join('、') : '不限';
-    const biomeText = cardData.biomes ? cardData.biomes.map(b => BIOME_NAMES[b] || b).join('、') : '不限';
+    let biomeText = cardData.biomes ? cardData.biomes.map(b => BIOME_NAMES[b] || b).join('、') : '不限';
+    if(cardData.requiresRiver) biomeText += '；需鄰接河流';
 
     listHtml += `
       <div class="deck-card-item" style="border-left: 4px solid ${rarityInfo.color};">
@@ -314,7 +315,7 @@ function startGame(){
     bonusScore: zeroScores(),      // 建造時永久獲得的分數（onBuild 的 xxxScore）
     scores: zeroScores(),          // 目前的最終分數（calculate 會重算）
     perTurn: {},                   // 每回合的資源產出（calculate 會重算）
-    techPoints: 0, unlockedTechs: [],
+    techPoints: 100, unlockedTechs: [],
     culturePoints: 0, unlockedCultures: [],
     activeMissions: [],
     board:terrainMap(), hand:[], deck:initDeck(cardPool), 

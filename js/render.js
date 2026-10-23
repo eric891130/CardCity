@@ -3,6 +3,7 @@ import { CARDS, LANDFORM_NAMES, BIOME_NAMES, SHOP_ITEMS, OUTPUTS, RARITY_CONFIG,
 import { canPlace, canAfford, isBuildingUnlocked } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { describeCard } from './effects.js';
+import { hasResearchableNodes } from './trees.js';
 
 const $ = id => document.getElementById(id);
 
@@ -40,10 +41,11 @@ export function renderBoard(onCellClick, onCellPointer, onCellLeave){
     b.className=`cell landform-${c.landform} biome-${c.biome} ${c.building?'occupied':'empty'}${valid?' selected':''}${isInspected?' inspected':''}`;
     if(valid) b.setAttribute('data-ghost', CARDS[selCard.type].emoji);   // 滑過時顯示半透明的建築預覽
     
-    let terrainIcon={plain:'·',hill:'⌁',river:'≈',mountain:'▲'}[c.landform] || '·';
-    let biomeIcon={grassland:'🌱',forest:'🌲',desert:'🏜️',snow:'❄️',wetland:'🌿'}[c.biome] || '';
-    b.innerHTML=`<span class="terrain" title="${LANDFORM_NAMES[c.landform]}">${terrainIcon}</span><span class="biome" title="${BIOME_NAMES[c.biome]}">${biomeIcon}</span>${c.building?`<span class="emoji">${CARDS[c.building].emoji}</span><span class="bname">${CARDS[c.building].name}</span><span class="bonus">${formatBonus(c.stats)}</span>`:''}`;
-    
+    let terrainIcon={plain:'·',hill:'⌁',water:'≈',mountain:'▲'}[c.landform] || '·';
+    let biomeIcon={grassland:'🌱',forest:'🌲',desert:'🏜️',snow:'❄️',water:'🌊',wetland:'🌿'}[c.biome] || '';
+    const riverMarkup=(c.riverEdges||[]).map(dir=>`<span class="river-edge river-${dir.toLowerCase()}" aria-hidden="true"></span>`).join('');
+    b.innerHTML=`${riverMarkup}<span class="terrain" title="${LANDFORM_NAMES[c.landform]}">${terrainIcon}</span><span class="biome" title="${BIOME_NAMES[c.biome]}">${biomeIcon}</span>${c.building?`<span class="emoji">${CARDS[c.building].emoji}</span><span class="bname">${CARDS[c.building].name}</span><span class="bonus">${formatBonus(c.stats)}</span>`:''}`;
+	
     b.addEventListener('click',()=>{ if(onCellClick) onCellClick(c); });
     b.addEventListener('mouseenter',(ev)=>{ if(onCellPointer) onCellPointer(c, ev); });
     b.addEventListener('mousemove',(ev)=>{ if(onCellPointer) onCellPointer(c, ev); });
@@ -239,16 +241,31 @@ export function renderMissions(onClaimClick) {
   });
 }
 
-export function updateMissionTabNotification() {
-  let hasReward = state.activeMissions.some(m => {
+export function updateAllTabNotifications() {
+  // 1. 任務系統紅點
+  let hasMissionReward = state.activeMissions.some(m => {
     let currentTotal = m.building === '__variety__' ? uniqueBuildingTypes() : countBuilding(m.building);
     let progress = Math.max(0, currentTotal - (m.baseline || 0));
     return progress >= m.target;
   });
   let missionTabBtn = document.querySelector('.tab-btn[data-tab="missions"]');
   if (missionTabBtn) {
-    if (hasReward) missionTabBtn.classList.add('has-reward');
+    if (hasMissionReward) missionTabBtn.classList.add('has-reward');
     else missionTabBtn.classList.remove('has-reward');
+  }
+
+  // 2. 科技樹紅點
+  let techBtn = document.querySelector('.tab-btn[data-tab="tech"]');
+  if (techBtn) {
+    if (hasResearchableNodes('tech')) techBtn.classList.add('has-reward');
+    else techBtn.classList.remove('has-reward');
+  }
+
+  // 3. 文化樹紅點
+  let cultBtn = document.querySelector('.tab-btn[data-tab="culture"]');
+  if (cultBtn) {
+    if (hasResearchableNodes('culture')) cultBtn.classList.add('has-reward');
+    else cultBtn.classList.remove('has-reward');
   }
 }
 
@@ -277,10 +294,10 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
     return;
   }
 
-  let terrainIcon = {plain:'·',hill:'⌁',river:'≈',mountain:'▲'}[c.landform] || '·';
+  let terrainIcon = {plain:'·',hill:'⌁',water:'≈',mountain:'▲'}[c.landform] || '·';
   let terrainName = LANDFORM_NAMES[c.landform] || c.landform;
   let biomeName = BIOME_NAMES[c.biome] || c.biome;
-  let biomeIcon = {grassland:'🌱',forest:'🌲',desert:'🏜️',snow:'❄️',wetland:'🌿'}[c.biome] || ''; 
+  let biomeIcon = {grassland:'🌱',forest:'🌲',desert:'🏜️',snow:'❄️',water:'🌊',wetland:'🌿'}[c.biome] || ''; 
 
   // 1. 【基本地形資訊】無論如何都會在最上方顯示
   let html = `
@@ -306,7 +323,8 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
     let resourceStats = formatStats(c.stats, ['resource']);
     let capacityStats = formatStats(c.stats, ['capacity']);
     let scoreStats = formatStats(c.stats, ['score']);
-
+	let upkeepCost = d.upkeep ? d.upkeep * lvl : 0;
+	
     html += `
       <hr style="border:none; border-top:1px solid var(--line, #2a3b4c); margin:10px 0;">
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
@@ -322,6 +340,7 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
       <div style="margin:6px 0; padding:6px; background:#101820; border-radius:6px; font-size:11px; line-height:1.6;">
         ${resourceStats ? `<div>每回合產出：<b>${resourceStats}</b></div>` : ''}
         ${capacityStats ? `<div>常駐效果：<b>${capacityStats}</b></div>` : ''}
+		<div>建築維護費：<b style="color:var(--red);">-${upkeepCost} ◈ / 回合</b></div>
         <div>目前最終分數：<b>${scoreStats || '—'}</b></div>
       </div>
     `;
@@ -402,13 +421,13 @@ function getCardUnlockInfo(cardId) {
         if (effect) {
           const mode = effect.mode || 'addPool';
           if (mode === 'upgradeOnly') {
-            return `解鎖解鎖：${node.icon} ${node.name} <span style="color:var(--purple);">(僅限升級獲得，不入卡池)</span>`;
+            return `科技/文化解鎖：${node.icon} ${node.name} <span style="color:var(--purple);">(僅限升級獲得，不入卡池)</span>`;
           } else if (mode === 'replacePool') {
             const relCard = CARDS[effect.replaces];
             const relName = relCard ? relCard.name : effect.replaces;
-            return `解鎖解鎖：${node.icon} ${node.name} <span style="color:var(--orange);">(替代卡池中的【${relName}】)</span>`;
+            return `科技/文化解鎖：${node.icon} ${node.name} <span style="color:var(--orange);">(替代卡池中的【${relName}】)</span>`;
           } else {
-            return `解鎖解鎖：${node.icon} ${node.name} (加入卡池)`;
+            return `科技/文化解鎖：${node.icon} ${node.name} (加入卡池)`;
           }
         }
       }
@@ -470,6 +489,7 @@ export function renderEncyclopedia() {
 
     let landformText = card.landforms ? card.landforms.map(l => LANDFORM_NAMES[l] || l).join('、') : '不限';
     let biomeText = card.biomes ? card.biomes.map(b => BIOME_NAMES[b] || b).join('、') : '不限';
+    if(card.requiresRiver) biomeText += '；需鄰接河流';
 
     // 加上 id="encyclopedia-card-${cardId}" 以便後續點擊跳轉定位
     html += `

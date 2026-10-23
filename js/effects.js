@@ -11,7 +11,7 @@
 //    target  對象建築：單一 id、id 陣列、或 'any'（任何建築）
 // ============================================================================
 import { CARDS, OUTPUTS, LANDFORM_NAMES, BIOME_NAMES, TECH_TREE, CULTURE_TREE } from './config.js';
-import { neighbors, buildingsWithin, countMatching, uniqueBuildingTypes, matchesTarget, targetList } from './board.js';
+import { neighbors, buildingsWithin, countMatching, uniqueBuildingTypes, matchesTarget, targetList, riverEdgeCount } from './board.js';
 
 // ---------- 建築效果 ----------
 // needs     除了 type/output/amount 以外「必填」的欄位
@@ -50,6 +50,11 @@ export const EFFECT_TYPES = {
     title: '相鄰地貌加成', phase: 'own', needs: ['biome'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
     count: (e, cell) => neighbors(cell).filter(n => n.biome === e.biome).length,
     cond: e => `每格相鄰的${BIOME_NAMES[e.biome] || e.biome}${capText(e, '格')}`
+  },
+  adjacentRiver: {
+    title: '河流加成', phase: 'own', needs: [], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
+    count: (e, cell) => riverEdgeCount(cell),
+    cond: e => `每段流經本格邊界的河流${capText(e, '段')}`
   },
   radiusBuilding: {
     title: '範圍內建築加成', phase: 'own', needs: ['radius', 'target'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,

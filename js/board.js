@@ -42,3 +42,8 @@ export function uniqueBuildingTypes(){
   if(!state || !state.board) return 0;
   return new Set(state.board.filter(c => c.building).map(c => c.building)).size;
 }
+// 河流以棋盤格邊界表示；riverEdges 儲存 N/E/S/W 方向。
+export function riverEdgeCount(cell){
+  return Array.isArray(cell?.riverEdges) ? cell.riverEdges.length : 0;
+}
+export function hasRiver(cell){ return riverEdgeCount(cell) > 0; }

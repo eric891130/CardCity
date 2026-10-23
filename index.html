@@ -42,7 +42,7 @@
     <section class="panel">
       <div class="panel-head"><div><h2>城市棋盤</h2><p>注意建造建築需要消耗金幣與對應人口！</p></div><div class="action-row"><button id="cancelBtn" class="subtle">取消選牌 <kbd>Esc</kbd></button></div></div>
       <div class="board-wrap"><div class="board" id="board" aria-label="城市棋盤"></div></div>
-      <div class="legend"><span><i class="swatch" style="background:#527d58"></i>地形：平原</span><span><i class="swatch" style="background:#88764e"></i>丘陵</span><span><i class="swatch" style="background:#367e9b"></i>河流</span><span><i class="swatch" style="background:#7c8586"></i>山地</span><span>｜地貌圖示：🌱草原 🌲森林 🏜️沙漠 ❄️雪地 🌿濕地</span></div>
+      <div class="legend"><span><i class="swatch" style="background:#527d58"></i>地形：平原</span><span><i class="swatch" style="background:#88764e"></i>丘陵</span><span><i class="swatch" style="background:#367e9b"></i>水域</span><span><i class="swatch" style="background:#7c8586"></i>山地</span><span>｜地貌圖示：🌱草原 🌲森林 🏜️沙漠 ❄️雪地 🌊水域 🌿濕地</span><span>｜藍色邊線：河流</span></div>	  
 	  <div class="panel-head"><div><h2>城市紀錄</h2><p>最近發生的事件。</p></div></div>
       <div class="section-body"><div class="log" id="log"></div></div>
     </section>
@@ -238,13 +238,22 @@
 	--> 
 	
 	  <div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);"  id="latestVersionTitle" > vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-22</small>
+	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-23</small>
 		<ul style="margin:5px 0; padding-left:20px;">
-		<li><b>修改了升級系統，不再是單純增加數值，而是讓一個建築變成另一個更高級的建築。</li>
-		<li><b>重新繪製了科技樹/文化樹的排列方式，現在將會是橫向排列。</li>
-		<li><b>新增了遊戲失敗條件：人口歸零的話遊戲將會直接結束。並且第10/20回合將會有分數考核。</li>
-		<li><b>新增了卡牌圖鑑分頁，可以看到遊戲內所有的建築</li>
-		<li><b>新增地形與地貌</li>
+		<li>新增了建築維護費機制(但都還是0，因為我還在測)</li>
+		<li>更新了地形地貌系統，改變地形生成的邏輯，不再是完全隨機</li>
+		<li>現在河流是一個附加在格子旁邊的系統，原先的"河流"現在更名為水域。</li>
+      </ul>
+      </div>
+	
+	  <div style="margin-bottom:15px;">
+	  <strong style="color:var(--gold);"> v0.12.0</strong> <small style="color:var(--muted);">- 2026-10-22</small>
+		<ul style="margin:5px 0; padding-left:20px;">
+		<li>修改了升級系統，不再是單純增加數值，而是讓一個建築變成另一個更高級的建築。</li>
+		<li>重新繪製了科技樹/文化樹的排列方式，現在將會是橫向排列。</li>
+		<li>新增了遊戲失敗條件：人口歸零的話遊戲將會直接結束。並且第10/20回合將會有分數考核。</li>
+		<li>新增了卡牌圖鑑分頁，可以看到遊戲內所有的建築</li>
+		<li>新增地形與地貌</li>
         </ul>
       </div>	
 	
