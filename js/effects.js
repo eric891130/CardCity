@@ -9,6 +9,7 @@
 //    output  產出什麼（見 config.js 的 OUTPUTS）
 //    amount  每單位產出多少
 //    target  對象建築：單一 id、id 陣列、或 'any'（任何建築）
+//    targetType  對象建築類型：比對 CARDS[id].type，例如 '生產'、'人口'、'科技'
 // ============================================================================
 import { CARDS, OUTPUTS, LANDFORM_NAMES, BIOME_NAMES, TECH_TREE, CULTURE_TREE } from './config.js';
 import { neighbors, buildingsWithin, countMatching, uniqueBuildingTypes, matchesTarget, targetList, riverEdgeCount } from './board.js';
@@ -22,8 +23,11 @@ import { neighbors, buildingsWithin, countMatching, uniqueBuildingTypes, matches
 //           'build'= 建造時只觸發一次
 // count     本效果「要乘幾倍 amount」（flat = 1）；cap 可限制最多算幾個
 // cond      卡牌說明文字裡的「條件」部分
-const names = target => targetList(target).length && target !== 'any'
-  ? targetList(target).map(id => (CARDS[id] ? CARDS[id].name : id)).join('、') : '建築';
+const names = (target, targetType) => {
+  if (targetType !== undefined) return `所有「${targetType}」類建築`;
+  return targetList(target).length && target !== 'any'
+    ? targetList(target).map(id => (CARDS[id] ? CARDS[id].name : id)).join('、') : '建築';
+};
 const capText = (e, unit) => e.cap === undefined ? '' : `（最多 ${e.cap} ${unit}）`;
 const ANY_OUTPUT = ['resource', 'capacity', 'score'];
 
@@ -37,9 +41,9 @@ export const EFFECT_TYPES = {
     count: () => 1, cond: () => ''
   },
   adjacentBuilding: {
-    title: '相鄰建築加成', phase: 'own', needs: ['target'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
-    count: (e, cell) => neighbors(cell).filter(n => matchesTarget(n.building, e.target)).length,
-    cond: e => `每座相鄰的${names(e.target)}${capText(e, '座')}`
+    title: '相鄰建築加成', phase: 'own', needs: [], optional: ['target', 'targetType', 'cap'], outputs: ANY_OUTPUT, counted: true,
+    count: (e, cell) => neighbors(cell).filter(n => matchesTarget(n.building, e.target, e.targetType)).length,
+    cond: e => `每座相鄰的${names(e.target, e.targetType)}${capText(e, '座')}`
   },
   adjacentLandform: {
     title: '相鄰地形加成', phase: 'own', needs: ['landform'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
@@ -57,14 +61,14 @@ export const EFFECT_TYPES = {
     cond: e => `每段流經本格邊界的河流${capText(e, '段')}`
   },
   radiusBuilding: {
-    title: '範圍內建築加成', phase: 'own', needs: ['radius', 'target'], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
-    count: (e, cell) => buildingsWithin(cell, e.radius).filter(n => matchesTarget(n.building, e.target)).length,
-    cond: e => `${e.radius} 格內每座${names(e.target)}${capText(e, '座')}`
+    title: '範圍內建築加成', phase: 'own', needs: ['radius'], optional: ['target', 'targetType', 'cap'], outputs: ANY_OUTPUT, counted: true,
+    count: (e, cell) => buildingsWithin(cell, e.radius).filter(n => matchesTarget(n.building, e.target, e.targetType)).length,
+    cond: e => `${e.radius} 格內每座${names(e.target, e.targetType)}${capText(e, '座')}`
   },
   buildingCount: {
-    title: '建築數量門檻', phase: 'own', needs: ['target', 'min'], optional: [], outputs: ANY_OUTPUT,
-    count: e => countMatching(e.target) >= e.min ? 1 : 0,
-    cond: e => `全城至少有 ${e.min} 座${names(e.target)}時`
+    title: '建築數量門檻', phase: 'own', needs: ['min'], optional: ['target', 'targetType'], outputs: ANY_OUTPUT,
+    count: e => countMatching(e.target, e.targetType) >= e.min ? 1 : 0,
+    cond: e => `全城至少有 ${e.min} 座${names(e.target, e.targetType)}時`
   },
   uniqueTypes: {
     title: '建築種類數量加成', phase: 'own', needs: [], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
@@ -73,21 +77,21 @@ export const EFFECT_TYPES = {
   },
   adjacentAura: {
     title: '對相鄰建築提供光環', phase: 'aura', needs: ['target'], optional: [], outputs: ANY_OUTPUT,
-    cond: e => `對每座相鄰的${names(e.target)}`
+    cond: e => `對每座相鄰的${names(e.target, e.targetType)}`
   },
   onBuild: {
-    title: '建造時一次性獲得', phase: 'build', needs: [], optional: ['target', 'cap'], outputs: ['resource', 'score'], counted: true,
-    // 有 target：每座「相鄰」的 target 建築算一次；沒有 target：固定算一次
-    count: (e, cell) => e.target === undefined ? 1 : neighbors(cell).filter(n => matchesTarget(n.building, e.target)).length,
-    cond: e => '建造時' + (e.target === undefined ? '' : `每座相鄰的${names(e.target)}${capText(e, '座')}`)
+    title: '建造時一次性獲得', phase: 'build', needs: [], optional: ['target', 'targetType', 'cap'], outputs: ['resource', 'score'], counted: true,
+    // 未指定 target / targetType 時固定觸發一次；有指定時，依相鄰符合條件的建築數量計算。
+    count: (e, cell) => e.target === undefined && e.targetType === undefined ? 1 : neighbors(cell).filter(n => matchesTarget(n.building, e.target, e.targetType)).length,
+    cond: e => '建造時' + (e.target === undefined && e.targetType === undefined ? '' : `每座相鄰的${names(e.target, e.targetType)}${capText(e, '座')}`)
   }
 };
 
 // ---------- 科技 / 文化樹的效果 ----------
 export const TREE_EFFECT_TYPES = {
   unlockBuilding: { title: '解鎖建築', needs: ['target'], optional: ['mode', 'replaces'] },
-  buildingBonus:  { title: '指定建築的固定加成（不隨等級成長）', needs: ['target', 'output', 'amount'], optional: [] },
-  effectBoost:    { title: '強化某建築的某種效果', needs: ['target', 'effectType', 'amount'], optional: [] }
+  buildingBonus:  { title: '指定建築類型的固定加成（不隨等級成長）', needs: ['output', 'amount'], optional: ['target', 'targetType'] },
+  effectBoost:    { title: '強化指定建築或類型的某種效果', needs: ['effectType', 'amount'], optional: ['target', 'targetType'] }
 };
 
 export const TREES = [TECH_TREE, CULTURE_TREE];
@@ -119,7 +123,7 @@ export function computeCellStats(board){
   const bonuses = tree.filter(e => e.type === 'buildingBonus');
   const boosts = tree.filter(e => e.type === 'effectBoost');
   const boostFor = (cardId, effectType) =>
-    boosts.filter(b => b.target === cardId && b.effectType === effectType).reduce((s, b) => s + b.amount, 0);
+    boosts.filter(b => matchesTarget(cardId, b.target, b.targetType) && b.effectType === effectType).reduce((s, b) => s + b.amount, 0);
 
   // 第 1 輪：每座建築「自己」的持續效果
   for(const c of board){
@@ -140,13 +144,13 @@ export function computeCellStats(board){
     for(const e of CARDS[c.building].effects || []){
       if(!EFFECT_TYPES[e.type] || EFFECT_TYPES[e.type].phase !== 'aura') continue;
       const amount = (e.amount + boostFor(c.building, e.type)) * levelFactor(e.output, lvl);
-      for(const n of neighbors(c)) if(matchesTarget(n.building, e.target)) n.stats[e.output] += amount;
+      for(const n of neighbors(c)) if(matchesTarget(n.building, e.target, e.targetType)) n.stats[e.output] += amount;
     }
   }
   // 第 3 輪：科技 / 文化樹的 buildingBonus（固定值）
   for(const c of board){
     if(!c.building) continue;
-    for(const b of bonuses) if(matchesTarget(c.building, b.target)) c.stats[b.output] += b.amount;
+    for(const b of bonuses) if(matchesTarget(c.building, b.target, b.targetType)) c.stats[b.output] += b.amount;
   }
 }
 
@@ -171,7 +175,7 @@ const ORDER = ['capacity', 'turn', 'build', 'score'];
 function resultPart(e, spec){
   const o = OUTPUTS[e.output];
   if(!o) return { order: 'turn', prefix: '', body: `${e.output} ${signed(e.amount)}` };
-  if(o.group === 'score') return { order: 'score', prefix: '最終', body: `${o.label} ${signed(e.amount)}` };
+  if(o.group === 'score') return { order: 'score', prefix: '', body: `${o.label} ${signed(e.amount)}` };
   if(o.group === 'capacity') return { order: 'capacity', prefix: '', body: `${o.label} ${signed(e.amount)}` };
   return spec.phase === 'build'
     ? { order: 'build', prefix: '獲得 ', body: `${e.amount} ${o.label}` }
@@ -198,5 +202,18 @@ export function describeEffects(effects){
   return [...groups].map(([cond, parts]) => cond ? `${cond}，${joinParts(parts)}` : joinParts(parts)).join('；') + '。';
 }
 export function describeCard(card){
-  return card.desc || describeEffects(card.effects);
+  // 1. 取得原本的效果說明
+  let desc = card.desc || describeEffects(card.effects);
+  
+  // 2. 如果有設定 preserveForest，就自動加上說明文字
+  if (card.preserveForest) {
+    // 移除結尾的句號，改用分號串接，看起來更自然
+    if (desc.endsWith('。')) {
+      desc = desc.slice(0, -1) + '；建造時保留森林。';
+    } else {
+      desc += '；建造時保留森林。';
+    }
+  }
+  
+  return desc;
 }

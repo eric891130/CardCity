@@ -5,7 +5,7 @@ button:hover:not(:disabled){filter:brightness(1.14);transform:translateY(-1px)}b
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:17px 22px;border-bottom:1px solid var(--line);background:#111d25dd;position:sticky;top:0;z-index:5;backdrop-filter:blur(12px)}
 .brand{display:flex;gap:11px;align-items:center}.logo{width:39px;height:39px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#74d7a5,#3d8c88);color:#10251e;font-size:22px;font-weight:900}.brand h1{font-size:18px;margin:0}.brand small{color:var(--muted)}.top-actions{display:flex;gap:8px}
 
-.stats{display:grid;grid-template-columns:repeat(8,minmax(70px,1fr));gap:6px;padding:6px 22px;max-width:1600px;margin:auto;position:sticky;top:74px;z-index:4;background:#101820ed;backdrop-filter:blur(10px)}
+.stats{display:grid;grid-template-columns:repeat(8,minmax(70px,1fr));gap:6px;padding:6px 22px;max-width:1600px;margin:auto;position:sticky;top:74px;z-index:4;background:#101820ed;backdrop-filter:blur(10px)}.stats .stat {transition: 0.15s;}.stats .stat:hover {border-color: var(--gold);filter: brightness(1.15);}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:5px 8px}.stat label{color:var(--muted);font-size:10px}.stat strong{display:block;font-size:15px;line-height:1.2;margin-top:1px}.stat .small{font-size:9px;color:var(--muted)}
 
 .tab-bar{display:flex;gap:8px;padding:14px 22px 0;max-width:1600px;margin:auto;border-bottom:1px solid var(--line);background:#101820}

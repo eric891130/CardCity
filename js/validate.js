@@ -32,7 +32,7 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     }
   };
 
-  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'upkeep', 'landforms', 'biomes', 'requiresRiver', 'upgradesTo', 'upgradeCost', 'effects', 'desc'];
+  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'upkeep', 'landforms', 'biomes', 'preserveForest', 'requiresRiver', 'upgradesTo', 'upgradeCost', 'effects', 'desc'];
   for (const id in cards) {
     const c = cards[id], at = `CARDS.${id}`;
     if (typeof c.name !== 'string' || !c.name) bad(at, '缺少 name。');
@@ -87,7 +87,21 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
   // 科技 / 文化樹
   const unlockable = new Set();
   const upgradeOnlyBuildings = new Set(); // 👈 記錄僅限升級獲得的建築
+  const upgradeTargets = new Set(); // 👈 用來收集所有「可透過升級取得」的建築目標
   const TREE_FIELDS = ['name', 'icon', 'cost', 'requires', 'desc', 'unlocked', 'effects'];
+  
+  // 先掃描所有 CARDS，把被當作升級目標的建築全部收集起來
+  for (const id in cards) {
+    const c = cards[id];
+    if (c.upgradesTo !== undefined) {
+      const targets = Array.isArray(c.upgradesTo) ? c.upgradesTo : [c.upgradesTo];
+      targets.forEach(tId => {
+        if (tId && (tId in cards)) {
+          upgradeTargets.add(tId); // 👈 2. 將升級目標加入集合
+        }
+      });
+    }
+  }
   
   for (const treeName in trees) {
     const tree = trees[treeName];
@@ -139,9 +153,8 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
   new Set(pool.filter((id, i) => pool.indexOf(id) !== i)).forEach(id => bad('cardPool', `"${id}" 重複出現了。`));
   
   for (const id in cards) {
-    // 👈 允許 upgradeOnly 的建築不在 pool 裡面，也不會報錯
-    if (!pool.includes(id) && !unlockable.has(id) && !upgradeOnlyBuildings.has(id)) {
-      bad(`CARDS.${id}`, '沒有加進 cardPool，也沒有被任何科技解鎖，所以永遠抽不到。');
+    if (!pool.includes(id) && !unlockable.has(id) && !upgradeOnlyBuildings.has(id) && !upgradeTargets.has(id)) {
+      bad(`CARDS.${id}`, '沒有加進 cardPool、沒有被任何科技解鎖，也無法透過建築升級取得，所以永遠無法取得。');
     }
   }
 

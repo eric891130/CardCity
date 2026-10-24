@@ -1,7 +1,7 @@
 // ===== 版本（集中管理）=====
 // VERSION      遊戲顯示版本，只需改這一處（標題、畫面左上角、頁尾都會自動更新）
 // SAVE_VERSION 存檔資料格式版本；存檔結構有不相容的變動時才 +1，並到 save.js 的 migrateSave 補遷移
-export const VERSION = '0.13.0';
+export const VERSION = '0.13.4';
 export const SAVE_VERSION = 4;
 export const SAVE_KEY = 'cardCitySave';
 export const LEGACY_SAVE_KEYS = ['cardCitySaveV9'];
@@ -47,10 +47,10 @@ export const BASE_PER_TURN = { gold:5, culturePoints:2, techPoints:2, faithPoint
 
 //建築的稀有度與初始張數
 export const RARITY_CONFIG = {
-  common:   { name: '普通', count: 4, color: '#a0a0a0' },
-  rare:     { name: '稀有', count: 3, color: '#3498db' },
-  epic:     { name: '罕見', count: 2, color: '#9b59b6' },
-  legendary:{ name: '傳說', count: 1, color: '#f1c40f' }
+  common:   { name: '普通', count: 4, color: '#a0a0a0', score: 2},
+  rare:     { name: '稀有', count: 3, color: '#3498db', score: 3},
+  epic:     { name: '罕見', count: 2, color: '#9b59b6', score: 5},
+  legendary:{ name: '傳說', count: 1, color: '#f1c40f', score: 10},
 };
 
 // ============================================================================
@@ -62,6 +62,7 @@ export const RARITY_CONFIG = {
 //    upkeep: 0,                            // 建築的維護費
 //    landforms:['plain','hill'],           // 可蓋的地形；省略代表不限
 //    biomes:['grassland','forest'],        // 可蓋的地貌；省略代表不限
+//    preserveForest: true,                 // True代表蓋上去後不會移除森林
 //    requiresRiver:true,                   // 必須建在有河流經過的格子旁（河流位於格子邊界）																													
 //	  upgradesTo: ['academy',],             // 升級後轉化成其他建築，沒有升級路線填 null 或留空
 //    effects:[ ...效果... ],                // 見下表；每個效果都是 { type, output, amount, ...專用欄位 }
@@ -91,193 +92,252 @@ export const RARITY_CONFIG = {
 //    例如住宅同時有 points:culturePoints 與 finalScore:buildingScore。這是為了讓拆分機制後的數值
 //    與舊版完全一致；想讓某個效果「只給點數」或「只給分數」，刪掉其中一條即可。
 // ============================================================================
+// farm: {
+//  name:'農田', emoji:'🌾', type:'生產',rarity: 'common', 
+//  cost:{ gold:3, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','wetland'],
+//	upgradesTo: ['house'],
+//  effects:[
+//    { type:'points',output:'food', amount:2 },
+//  ]
+// },
+// ============================================================================
+export const cardPool = ['farm','lumbermill','pasture','dock','tent','house','park','market','well','library','windmill','monument','mine','shrine','festival','hospital'];
+
 export const CARDS = {
   farm: {
     name:'農田', emoji:'🌾', type:'生產',rarity: 'common', 
-    cost:{ gold:3, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','wetland'],
-	upgradesTo: ['house'],
+    cost:{ gold:1, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','wetland'],
+	upgradesTo: ['pasture',],
     effects:[
       { type:'points',        output:'food', amount:2 },
 	  { type:'adjacentLandform', landform:'water', output:'food', amount:1 },
       { type:'adjacentRiver', output:'food', amount:1 }
     ]
   },
-  house: {
-    name:'住宅', emoji:'🏠', type:'人口',rarity: 'common',
-    cost:{ gold:4, pop:0 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-	upgradesTo: [,'hospital'],
+  pasture: {
+    name:'牧場', emoji:'🐮', type:'生產',rarity: 'common', 
+    cost:{ gold:3, pop:1 }, upkeep: 2, landforms:['plain'], biomes:['grassland','forest','wetland'],
+	upgradesTo: ['farm',],
     effects:[
-      { type:'points',           output:'population',    amount:3 },
-      { type:'points',           output:'culturePoints', amount:2 },
-      { type:'finalScore',       output:'buildingScore',  amount:2 },
-      { type:'adjacentBuilding', target:'park', output:'culturePoints', amount:2 },
-      { type:'adjacentBuilding', target:'park', output:'buildingScore',  amount:2 }
+      { type:'points',        output:'food', amount:3 },
+	  { type:'adjacentBiome', biome:'grassland', output:'food', amount:1 },
+	  { type:'adjacentBiome', biome:'grassland', output:'gold', amount:1 },
     ]
   },
-  park: {
-    name:'公園', emoji:'🌳', type:'環境',rarity: 'rare',
-    cost:{ gold:3, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-	upgradesTo: [],
+  lumbermill: {
+    name:'伐木場', emoji:'🪓', type:'生產',rarity: 'common', 
+    cost:{ gold:3, pop:1 }, upkeep: 2, landforms:['plain','hill','mountain'], biomes:['forest'],
+	upgradesTo: ['factory'], preserveForest: true,
     effects:[
-		{ type:'finalScore',    output:'buildingScore',     amount:2 },
-	]
-  },
-  factory: {
-    name:'工廠', emoji:'🏭', type:'工業',rarity: 'epic',
-    cost:{ gold:7, pop:2 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
-    upgradesTo: [],
-	effects:[
-      { type:'points', output:'gold', amount:4 }
+      { type:'points',        output:'gold', amount:3 },
+	  { type:'adjacentBiome', biome:'forest', output:'gold', amount:1 },
     ]
   },
-  market: {
-    name:'市場', emoji:'🏪', type:'商業',rarity: 'rare',
-    cost:{ gold:6, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-    upgradesTo: ['business_center'],
-	effects:[
-      { type:'points',           output:'gold', amount:2 },
-      { type:'adjacentBuilding', target:'farm', output:'gold', amount:1 }
-    ]
-  },
-  road: {
-    name:'道路', emoji:'🛣️', type:'設施',rarity: 'common',
-    cost:{ gold:2, pop:0 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-	upgradesTo: [],
-    effects:[
-      { type:'adjacentAura', target:['market','factory'], output:'gold', amount:1 }
-    ]
-  },
-  well: {
-    name:'水井', emoji:'⛲', type:'設施',rarity: 'rare',
-    cost:{ gold:5, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-    upgradesTo: [],
-	effects:[
-      { type:'points',           output:'gold', amount:1 },
-      { type:'adjacentBuilding', target:'farm', output:'food', amount:1 }
-    ]
-  },
-  library: {
-    name:'圖書館', emoji:'📚', type:'文化',rarity: 'rare',
-    cost:{ gold:8, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-    upgradesTo: ['academy'],
-	effects:[
-      { type:'points',        output:'culturePoints', amount:2 },
-      { type:'points',        output:'techPoints',    amount:2 },
-      { type:'finalScore',    output:'buildingScore',     amount:2 },
-      { type:'buildingCount', target:'house', min:3, output:'techPoints', amount:3 },
-      { type:'buildingCount', target:'house', min:3, output:'buildingScore',  amount:3 }
-    ]
-  },
-  windmill: {
-    name:'風車', emoji:'🌬️', type:'生產',rarity: 'epic',
-    cost:{ gold:6, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
-    upgradesTo: ['watermill'],
-	effects:[
-      { type:'points',          output:'gold', amount:2 },
-      { type:'adjacentLandform', landform:'mountain', output:'gold', amount:2 }
-    ]
-  },
-  monument: {
-    name:'紀念碑', emoji:'🏛️', type:'地標',rarity:'legendary',
-    cost:{ gold:10, pop:2 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
-    upgradesTo: [],
-	effects:[
-      { type:'onBuild', output:'culturePoints', amount:5 },
-      { type:'onBuild', output:'techPoints',   amount:5 }
-    ]
-  },
-  mine: {
-    name:'礦場', emoji:'⛏️', type:'工業',rarity: 'rare',
-    cost:{ gold:6, pop:1 }, upkeep: 0, landforms:['mountain'], biomes:['grassland','forest','snow'],
+   mine: {
+    name:'礦場', emoji:'⛏️', type:'工業',rarity: 'common',
+    cost:{ gold:5, pop:1 }, upkeep: 2, landforms:['hill','mountain'], biomes:['grassland','forest','snow','desert'],
     upgradesTo: ['iron_mine'],
 	effects:[
       { type:'points',          output:'gold', amount:3 },
       { type:'adjacentLandform', landform:'mountain', output:'gold', amount:2 }
     ]
   },
-  church: {
-    name:'教堂', emoji:'⛪', type:'信仰',rarity: 'rare',
-    cost:{ gold:8, pop:1 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
+  dock: {
+    name:'碼頭', emoji:'🐟', type:'生產',rarity: 'rare',
+    cost:{ gold:3, pop:1 }, upkeep: 2, landforms:['water'], biomes:['water'],
+    upgradesTo: ['port'],
+	effects:[
+      { type:'points', output:'food', amount:3 },
+	  { type:'points', output:'gold', amount:2 },
+    ]
+  }, 
+  port : {
+    name:'港口', emoji:'⚓', type:'商業',rarity: 'epic',
+    cost:{ gold:5, pop:1 }, upkeep: 3, landforms:['water'], biomes:['water'],
     upgradesTo: [],
 	effects:[
-      { type:'points',     output:'faithPoints', amount:3 },
-      { type:'finalScore', output:'buildingScore',  amount:3 }
+      { type:'points', output:'food', amount:3 },
+	  { type:'points', output:'gold', amount:3 },
+	  { type:'radiusBuilding', radius:8, target:'dock' , output:'food', amount:3 },
+	  { type:'radiusBuilding', radius:8, target:'dock' , output:'gold', amount:3 },
+    ]
+  },     
+  factory: {
+    name:'工廠', emoji:'🏭', type:'工業',rarity: 'epic',
+    cost:{ gold:7, pop:2 }, upkeep: 5, landforms:['plain'], biomes:['grassland','forest','desert','snow'],
+    upgradesTo: [],
+	effects:[
+      { type:'points', output:'gold', amount:8 },
+	  { type:'adjacentBuilding', target:'lumbermill', output:'gold', amount:1 },
+	  { type:'adjacentBuilding', target:'mine', output:'gold', amount:2 },
+	  { type:'adjacentBuilding', target:'iron_mine', output:'gold', amount:3 },
+    ]
+  },  
+  tent: {
+    name:'帳篷', emoji:'⛺', type:'人口',rarity: 'common',
+    cost:{ gold:3, pop:0 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow','wetland'],
+	upgradesTo: ['house'],
+    effects:[
+      { type:'points', output:'population', amount:2 },
     ]
   },
-  bakery: {
-    name:'麵包坊', emoji:'🥐', type:'商業',rarity: 'rare',
-    cost:{ gold:5, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest'],
+  house: {
+    name:'住宅', emoji:'🏠', type:'人口',rarity: 'common',
+    cost:{ gold:4, pop:0 }, upkeep: 2, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'],
+	upgradesTo: ['hospital'],
+    effects:[
+      { type:'points', output:'population', amount:3 },
+	  { type:'points', output:'techPoints', amount:1 },
+      { type:'points', output:'culturePoints', amount:1 },
+    ]
+  },
+  park: {
+    name:'公園', emoji:'🌳', type:'環境',rarity: 'rare',
+    cost:{ gold:3, pop:0 }, upkeep: 1, landforms:['plain','hill'], biomes:['grassland','forest'],	
+	upgradesTo: ['hospital','townhall'],preserveForest: true,
+    effects:[
+		{ type:'finalScore',    output:'buildingScore',     amount:2 },
+		{ type:'adjacentBuilding', target:'park', output:'culturePoints', amount:1 },
+        { type:'adjacentBuilding', target:'park', output:'buildingScore', amount:2 }
+	]
+  },
+  market: {
+    name:'市場', emoji:'🏪', type:'商業',rarity: 'rare',
+    cost:{ gold:6, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'],
+    upgradesTo: ['business_center'],
+	effects:[
+      { type:'points',           output:'gold', amount:2 },
+      { type:'adjacentBuilding', target:'house', output:'gold', amount:2 }
+    ]
+  },
+  well: {
+    name:'水井', emoji:'💧', type:'設施',rarity: 'rare',
+    cost:{ gold:5, pop:0 }, upkeep: 3, landforms:['plain'], biomes:['grassland','forest','wetland'],
     upgradesTo: [],
 	effects:[
-      { type:'points',  output:'gold', amount:1 },
-      { type:'onBuild', target:'farm', output:'gold', amount:3 }
+      { type:'adjacentBuilding', target:'farm', output:'food', amount:1 }
+    ]
+  },
+  library: {
+    name:'圖書館', emoji:'📚', type:'文化',rarity: 'rare',
+    cost:{ gold:6, pop:1 }, upkeep: 3, landforms:['plain','hill','mountain'], biomes:['grassland','forest','snow','desert','wetland'],
+    upgradesTo: ['academy'],
+	effects:[
+      { type:'points',        output:'techPoints',    amount:2 },
+      { type:'finalScore',    output:'buildingScore',     amount:1 },
+      { type:'buildingCount', target:'house', min:3, output:'techPoints', amount:3 },
+      { type:'buildingCount', target:'house', min:3, output:'buildingScore',  amount:3 }
+    ]
+  },
+  windmill: {
+    name:'風車', emoji:'🌬️', type:'生產',rarity: 'epic',
+    cost:{ gold:6, pop:1 }, upkeep: 2, landforms:['plain','hill'], biomes:['grassland','snow','desert','wetland'],
+    upgradesTo: ['watermill'],
+	effects:[
+      { type:'points',          output:'gold', amount:2 },
+      { type:'adjacentBuilding', target:'farm', output:'buildingScore', amount:2 },
+	  { type:'adjacentBuilding', target:'farm', output:'food', amount:1 }
+    ]
+  },
+  monument: {
+    name:'紀念碑', emoji:'🏛️', type:'地標',rarity:'legendary',
+    cost:{ gold:10, pop:0 }, upkeep: 10, landforms:['plain'], biomes:['grassland','forest','snow','desert','wetland'],
+    upgradesTo: [],preserveForest: true,
+	effects:[
+	  { type:'onBuild', output:'buildingScore', amount:10 },
+      { type:'onBuild', output:'culturePoints', amount:5 },
+      { type:'onBuild', output:'techPoints',   amount:5 }
+    ]
+  },
+  shrine: {
+    name:'祠堂', emoji:'⛪', type:'信仰',rarity: 'rare',
+    cost:{ gold:3, pop:1 }, upkeep: 3, landforms:['plain','hill','mountain'], biomes:['grassland','forest','desert','snow','wetland'],
+    upgradesTo: ['Temple'],
+	effects:[
+      { type:'points',     output:'faithPoints', amount:2 },
+	  { type:'onBuild', output:'culturePoints', amount:1 },
+    ]
+  },
+  Temple: {
+    name:'神殿', emoji:'⛪', type:'信仰',rarity: 'rare',
+    cost:{ gold:5, pop:2 }, upkeep: 5, landforms:['plain','hill','mountain'], biomes:['grassland','forest','desert','snow','wetland'],
+    upgradesTo: [],
+	effects:[
+      { type:'points',     output:'faithPoints', amount:4 },
+	  { type:'points',     output:'culturePoints', amount:2 },
+	  { type:'adjacentBiome', biome:'forest', output:'faithPoints', amount:1 },
+      { type:'finalScore', output:'buildingScore',  amount:3 }
     ]
   },
   academy: {
     name:'學院', emoji:'🎓', type:'科技',rarity: 'epic',
-    cost:{ gold:9, pop:1 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
+    cost:{ gold:8, pop:2 }, upkeep: 8, landforms:['plain','hill','mountain'], biomes:['grassland','forest','desert','snow','wetland'],
     upgradesTo: [],
 	effects:[
-      { type:'uniqueTypes', output:'techPoints', amount:1, cap:6 },
-      { type:'uniqueTypes', output:'buildingScore',  amount:1, cap:6 }
+		{ type:'points', output:'techPoints',    amount:3 },
+		{ type:'radiusBuilding', radius:2, target:'house', output:'techPoints', amount:1 },
+		{ type:'radiusBuilding', radius:3, target:'library', output:'techPoints', amount:1 },
     ]
   },
   festival: {
     name:'節慶廣場', emoji:'🎪', type:'地標',rarity:'legendary',
-    cost:{ gold:8, pop:1 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
-    upgradesTo: [],
+    cost:{ gold:8, pop:0 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert','snow','wetland'],
+    upgradesTo: ['monument'],preserveForest: true,
 	effects:[
       { type:'onBuild', output:'gold', amount:2 },
-      { type:'onBuild', target:'any', output:'buildingScore', amount:2 }
+	  { type:'onBuild', target:'any', output:'gold',          amount:3 },
+      { type:'onBuild', target:'any', output:'buildingScore', amount:3 }
     ]
   },
   townhall: {
     name:'市政廳', emoji:'🏛️', type:'行政',rarity:'legendary',
-    cost:{ gold:12, pop:2 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
+    cost:{ gold:12, pop:3 }, upkeep: 10, landforms:['plain','hill','mountain'], biomes:['grassland','forest','desert','snow','wetland'],
     upgradesTo: [],
 	effects:[
-      { type:'points',         output:'culturePoints', amount:4 },
-      { type:'finalScore',     output:'buildingScore',  amount:4 },
-      { type:'radiusBuilding', radius:2, target:'house', output:'culturePoints', amount:1 },
-      { type:'radiusBuilding', radius:2, target:'house', output:'buildingScore',  amount:1 }
+      { type:'uniqueTypes',    output:'culturePoints', amount:1 },
+	  { type:'uniqueTypes',    output:'techPoints', amount:1 },
+	  { type:'uniqueTypes',    output:'buildingScore', amount:1 },
     ]
   },
   hospital: {
     name:'醫院', emoji:'🏥', type:'公共服務',rarity:'epic',
-    cost:{ gold:9, pop:1 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
+    cost:{ gold:9, pop:1 }, upkeep: 5, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow','wetland'],
     upgradesTo: [],
 	effects:[
-      { type:'points',         output:'culturePoints', amount:2 },
+      { type:'points', output:'gold',       amount:2 },
+	  { type:'points', output:'population', amount:3 },
       { type:'finalScore',     output:'buildingScore',  amount:2 },
-      { type:'radiusBuilding', radius:2, target:'house', output:'population', amount:1, cap:3 }
+      { type:'radiusBuilding', radius:2, target:['tent','house'], output:'population', amount:1, cap:3 }
     ]
   },
   watermill: {
     name:'水力磨坊', emoji:'⚙️', type:'科技解鎖',rarity:'rare',
-    cost:{ gold:6, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','wetland'], requiresRiver:true,
+    cost:{ gold:6, pop:1 }, upkeep: 2, landforms:['plain','hill','mountain','water'], biomes:['grassland','forest','desert','snow','wetland','water'], requiresRiver:true,
     upgradesTo: [],
 	effects:[
       { type:'points', output:'food', amount:3 },
-      { type:'points', output:'gold', amount:2 },
-	  { type:'adjacentAura', target:['farm'], output:'food', amount:1 },
+	  { type:'adjacentAura', target:['farm'], output:'food', amount:2 },
+	  { type:'adjacentAura', target:['farm'], output:'gold', amount:1 },
     ]
   },
   iron_mine: {
     name:'鐵礦場', emoji:'⛏️', type:'科技解鎖',rarity:'rare',
-    cost:{ gold:8, pop:2 }, upkeep: 0, landforms:['mountain'], biomes:['grassland','forest','snow'],
+    cost:{ gold:8, pop:2 }, upkeep: 3, landforms:['mountain'], biomes:['grassland','forest','snow','desert'],
     upgradesTo: [],
 	effects:[
-      { type:'points', output:'gold', amount:5 }
+      { type:'points', output:'gold', amount:5 },
+	  { type:'adjacentBuilding', target:['mine','iron_mine'], output:'gold', amount:3 },
     ]
   },
   business_center: {
     name:'商務中心', emoji:'🏢', type:'科技解鎖',rarity:'epic',
-    cost:{ gold:10, pop:2 }, upkeep: 0, landforms:['plain'], biomes:['grassland','forest','desert'],
+    cost:{ gold:10, pop:2 }, upkeep: 5, landforms:['plain'], biomes:['grassland','forest','desert','snow','wetland'],
     upgradesTo: [],
 	effects:[
-      { type:'points',     output:'gold',          amount:6 },
-      { type:'points',     output:'culturePoints', amount:2 },
-      { type:'finalScore', output:'buildingScore',  amount:2 }
+      { type:'points',     output:'gold',       amount:6 },
+      { type:'points',     output:'techPoints', amount:2 },
+	  { type:'adjacentBuilding', target:['market','house'], output:'gold', amount:2 },
+      { type:'finalScore', output:'buildingScore',  amount:3 }
     ]
   }
 };
@@ -310,7 +370,7 @@ export const TECH_TREE = {
     desc: '解鎖【鐵礦場】；所有礦場每回合額外產出 2 金幣。',
     unlocked: false,
     effects: [
-      { type:'unlockBuilding', target:'iron_mine', mode:'upgradeOnly' },
+      { type:'unlockBuilding', target:'iron_mine', mode:'addPool' },
       { type:'buildingBonus',  target:'mine', output:'gold', amount:2 }
     ]
   },
@@ -327,11 +387,10 @@ export const TECH_TREE = {
   },
   engineering: {
     name: '工程學', icon: '🛠️', cost: 16, requires: ['iron_mining'],
-    desc: '工廠每回合額外產出 2 金幣；道路對相鄰市場與工廠的加成提高至每條道路 +2 金幣。',
+    desc: '工廠每回合額外產出 4 金幣。',
     unlocked: false,
     effects: [
-      { type:'buildingBonus', target:'factory', output:'gold', amount:2 },
-      { type:'effectBoost',   target:'road', effectType:'adjacentAura', amount:1 }
+      { type:'buildingBonus', target:'factory', output:'gold', amount:4 },
     ]
   },
   mechanization: {
@@ -365,11 +424,11 @@ export const CULTURE_TREE = {
   },
   philosophy: {
     name: '哲學思想', icon: '🏛️', cost: 20, requires: ['tradition'],
-    desc: '所有圖書館與教堂每回合額外 +2 文化點、最終文化分 +2。',
+    desc: '所有圖書館與祠堂每回合額外 +2 文化點、最終文化分 +2。',
     unlocked: false,
     effects: [
-      { type:'buildingBonus', target:['library','church'], output:'culturePoints', amount:2 },
-      { type:'buildingBonus', target:['library','church'], output:'buildingScore',  amount:2 }
+      { type:'buildingBonus', target:['library','shrine'], output:'culturePoints', amount:2 },
+      { type:'buildingBonus', target:['library','shrine'], output:'buildingScore',  amount:2 }
     ]
   },
   public_gardens: {
@@ -404,7 +463,6 @@ export const MISSION_POOL = [
   {id:'park2', title:'綠意盎然', desc:'建造 2 座公園。', target:2, reward:6, building:'park'},
   {id:'homes3', title:'新興社區', desc:'建造 3 座住宅。', target:3, reward:8, building:'house'},
   {id:'market2', title:'商業聚落', desc:'建造 2 座市場。', target:2, reward:7, building:'market'},
-  {id:'road3', title:'四通八達', desc:'建造 3 條道路。', target:3, reward:5, building:'road'},
   {id:'factory1', title:'工業起步', desc:'建造 1 座工廠。', target:1, reward:10, building:'factory'},
   {id:'mine2', title:'開採資源', desc:'建造 2 座礦場。', target:2, reward:9, building:'mine'},
   {id:'variety5', title:'多元城市', desc:'建造至少 5 種不同類型的建築。', target:5, reward:10, building:'__variety__'}
@@ -417,10 +475,11 @@ export const EVENT_POOL = [
   { id: 'storm', title: '暴風雨', desc: '強風吹襲城市，修繕設施花費了 8 金幣。', effect: (s) => { s.gold = Math.max(0, s.gold - 8); } }
 ];
 
-export const cardPool = ['farm','house','park','factory','market','road','well','library','windmill','monument','mine','church','bakery','academy','festival','townhall','hospital'];
-
 // ===== 遊戲失敗門檻設定 =====
-export const TURN_SCORE_MILESTONES = {
-  10: 200,   // 第 10 回合結束時
-  20: 500  
-};
+// 每 10 回合檢查一次中期分數。保留原本第 10 / 20 回合的 200 / 500 分門檻，
+// 第 20 回合後放慢門檻成長，避免遊戲加長後要求暴增；最終回合不作為中期淘汰門檻。
+export function getRequiredScoreForTurn(turn) {
+  if (!Number.isInteger(turn) || turn <= 0 || turn >= MAX_TURNS || turn % 10 !== 0) return null;
+  if (turn <= 20) return 30 * turn - 100;
+  return 500 + (turn - 20) * 15;
+}

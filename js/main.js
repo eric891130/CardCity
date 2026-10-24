@@ -40,7 +40,7 @@ function renderStats(){
   $('turnStat').textContent = `${state.turn} / ${MAX_TURNS}`;
   $('phaseStat').textContent = state.gameOver ? '遊戲結束' : '建設階段';
   $('goldStat').textContent = `${state.gold} (${state.perTurn.gold >= 0 ? '+' : ''}${state.perTurn.gold})`;
-  $('incomeStat').textContent = `每回合結算`;
+  // $('incomeStat').textContent = `每回合結算`;
   
   $('popStat').textContent = `${state.population} / ${state.maxPopulation}`;
   
@@ -274,9 +274,9 @@ function isDemolishArmed(){
 }
 function clearPendingDemolish(){ pendingDemolish = null; }
 
-function onUpgradeClick(){
+function onUpgradeClick(targetChoiceId = null){
   clearPendingDemolish();
-  upgradeInspectedBuilding();
+  upgradeInspectedBuilding(targetChoiceId);
   render();
 }
 
@@ -310,12 +310,12 @@ function onShopBuy(i, item){
 
 function startGame(){
   setState({
-    turn:1, gold:25, faith: 15,
-    basePopulation:3, maxPopulation:3, lostPopulation:0, storedFood:5,
+    turn:1, gold:25, faith: 10,
+    basePopulation:0, maxPopulation:0, lostPopulation:0, storedFood:5,
     bonusScore: zeroScores(),      // 建造時永久獲得的分數（onBuild 的 xxxScore）
     scores: zeroScores(),          // 目前的最終分數（calculate 會重算）
     perTurn: {},                   // 每回合的資源產出（calculate 會重算）
-    techPoints: 100, unlockedTechs: [],
+    techPoints: 0, unlockedTechs: [],
     culturePoints: 0, unlockedCultures: [],
     activeMissions: [],
     board:terrainMap(), hand:[], deck:initDeck(cardPool), 
@@ -331,8 +331,7 @@ function startGame(){
   state.activeMissions = getRandomMissions(3);
   state.shop = makeShop();
   
-  state.hand.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()), type: 'farm' });
-  for(let i=0;i<4;i++) state.hand.push(drawFromDeck());
+  for(let i=0;i<5;i++) state.hand.push(drawFromDeck());
 
   pendingDemolish = null;
   
@@ -405,15 +404,35 @@ $('endTurnBtn').addEventListener('click', () => {
   clearPendingDemolish();
   endTurn();
   if(state.gameOver) {
-    const breakdown = getScoreBreakdown().map(e => `${e.label}：${e.value}`).join('、');
+    const totalScore = calculateTotalScore();
+    const breakdown = getScoreBreakdown();
     
-    // 判斷是失敗結局還是成功通關
+    // 組合每項分行的 HTML 結構
+    let breakdownHtml = `<div style="text-align: left; margin: 15px auto; max-width: 320px; background: #101820; padding: 12px; border-radius: 8px; border: 1px solid var(--line);">`;
+    breakdownHtml += `<div style="font-weight: bold; color: var(--gold); margin-bottom: 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px;">📈 積分來源明細：</div>`;
+    breakdown.forEach(item => {
+      breakdownHtml += `<div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">`;
+      breakdownHtml += `<span style="color: var(--muted);">${item.label}：</span>`;
+      breakdownHtml += `<span style="color: var(--text); font-weight: bold;">+${item.value} 分</span>`;
+      breakdownHtml += `</div>`;
+    });
+    breakdownHtml += `<div style="display: flex; justify-content: space-between; font-size: 14px; margin-top: 8px; border-top: 1px solid var(--line); paddingTop: 6px; font-weight: bold;">`;
+    breakdownHtml += `<span style="color: var(--gold);">總積分合計：</span>`;
+    breakdownHtml += `<span style="color: var(--gold);">${totalScore} ★</span>`;
+    breakdownHtml += `</div>`;
+    breakdownHtml += `</div>`;
+
+    // 恢復 modal 的按鈕顯示
+    $('modalRestart').style.display = 'inline-block';
+    $('modalClose').textContent = '返回城市';
+
     if (state.failReason) {
       $('modalTitle').textContent = '💀 遊戲失敗';
-      $('modalText').textContent = `${state.failReason}\n\n最終結算：總積分 ${calculateTotalScore()} ★（${breakdown}）。`;
+      // 使用 innerHTML 來支援分行與美化排版
+      $('modalText').innerHTML = `<p style="margin:0 0 10px 0;">${state.failReason}</p>` + breakdownHtml;
     } else {
       $('modalTitle').textContent = '🎉 城市建設圓滿成功！';
-      $('modalText').textContent = `成功撐過 30 回合！總積分 ${calculateTotalScore()} ★（${breakdown}）。`;
+      $('modalText').innerHTML = `<p style="margin:0 0 10px 0;">你成功帶領城市撐過了 30 回合的挑戰！</p>` + breakdownHtml;
     }
     
     $('modalBackdrop').classList.add('show');
@@ -466,6 +485,50 @@ $('modalRestart').addEventListener('click', () => {$('modalBackdrop').classList.
 });
 
 $('modalClose').addEventListener('click', () =>$('modalBackdrop').classList.remove('show'));
+
+// ===== 點擊頂部統計列的互動處理 ===== //
+// 點擊總分：顯示詳細的分數統計表彈窗
+$('statScoreStat').addEventListener('click', () => {
+  const breakdown = getScoreBreakdown();
+  const total = calculateTotalScore();
+  
+  let html = `<div style="font-size:13px; line-height:1.8;">`;
+  html += `<p style="color:var(--gold); font-weight:bold; font-size:15px; margin-bottom:10px;">目前總積分：${total} ★</p>`;
+  html += `<ul style="padding-left:20px; margin:0; color:var(--text);">`;
+  breakdown.forEach(item => {
+    html += `<li style="margin-bottom:6px;"><b>${item.label}</b>：<span style="color:var(--green);">${item.value} 分</span></li>`;
+  });
+  html += `</ul></div>`;
+
+  $('modalTitle').textContent = '📊 詳細分數統計來源';
+  $('modalText').innerHTML = html;
+  // 隱藏「再玩一局」按鈕，只留返回城市
+  $('modalRestart').style.display = 'none';
+  $('modalClose').textContent = '了解';
+  $('modalBackdrop').classList.add('show');
+});
+
+// 點擊科技點：切換到科技樹分頁
+$('statTechStat').addEventListener('click', () => {
+  switchTab('tech');
+});
+
+// 點擊文化點：切換到文化樹分頁
+$('statCultureStat').addEventListener('click', () => {
+  switchTab('culture');
+});
+
+// 點擊回合/人口/存糧：切換到城市分頁
+$('statTurnStat').addEventListener('click', () => {
+  switchTab('city');
+});
+$('statPOPStat').addEventListener('click', () => {
+  switchTab('city');
+});
+$('statFoodStat').addEventListener('click', () => {
+  switchTab('city');
+});
+// ===== 點擊頂部統計列的互動處理(結束) ===== //
 
 for(const kind of Object.keys(TREES)){
   const prefix = TREES[kind].prefix;

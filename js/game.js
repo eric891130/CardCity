@@ -1,5 +1,5 @@
 import { state, playSound, message } from './state.js';
-import { RARITY_CONFIG , CARDS, LANDFORM_NAMES, BIOME_NAMES, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN, TURN_SCORE_MILESTONES } from './config.js';
+import { RARITY_CONFIG , CARDS, LANDFORM_NAMES, BIOME_NAMES, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN, getRequiredScoreForTurn, TECH_TREE , CULTURE_TREE } from './config.js';
 import { countBuilding, uniqueBuildingTypes, hasRiver } from './board.js';
 import { computeCellStats, computeOnBuild, unlockedBuildingIds, activeTreeEffects } from './effects.js';
 
@@ -234,6 +234,23 @@ function chooseBiome(landform, riverNearby=false){
       : ['grassland','grassland','grassland','forest','forest','desert','snow'];
   return rand(choices);
 }
+
+// 隨機在符合地形限制的合法格子中放置初始建築
+function placeInitialBuilding(board, buildingType) {
+  // 過濾出所有「沒有建築」且「符合該建築地形/地貌限制」的格子
+  const validCells = board.filter(c => !c.building && matchesLand(c, CARDS[buildingType]));
+  if (validCells.length > 0) {
+    // 隨機挑選一格
+    const cell = validCells[Math.floor(Math.random() * validCells.length)];
+    cell.building = buildingType;
+    cell.level = 1;
+    // 如果該格是森林，且該建築沒有設定 preserveForest，則照規則轉為草原
+    if (cell.biome === 'forest' && !CARDS[buildingType].preserveForest) {
+      cell.biome = 'grassland';
+    }
+  }
+}
+
 export function terrainMap(){
   const landforms=growLandformRegions();
   const map=[];
@@ -259,6 +276,10 @@ export function terrainMap(){
     const mostCommon=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0];
     if(mostCommon) cell.biome=mostCommon;
   }
+  
+  placeInitialBuilding(map, 'farm');
+  placeInitialBuilding(map, 'house');
+  
   return map;
 }
 
@@ -309,14 +330,47 @@ export function availableCardPool(){
   // 最終過濾掉所有被取代的舊建築
   return pool.filter(id => !replacedSet.has(id));
 }
-// 判斷某個建築目前是否「已解鎖」（可用於升級檢核）
+
+// 判斷某個建築目前是否「已解鎖」（可用於升級檢核或抽卡）
+// 判斷某個建築目前是否「已解鎖」（可用於升級檢核或抽卡）
 export function isBuildingUnlocked(buildingId) {
-  // 1. 如果在初始基礎卡池中，預設已解鎖
+  // 1. 如果在初始基礎卡池中，預設已解鎖[cite: 7]
   if (cardPool.includes(buildingId)) return true;
 
-  // 2. 檢查科技/文化樹是否有解鎖該建築
-  const treeEffects = activeTreeEffects();
-  return treeEffects.some(e => e.type === 'unlockBuilding' && e.target === buildingId);
+  // 2. 檢查這個建築是否被科技樹或文化樹所控制（也就是說，它需要透過研發解鎖）
+  let isControlledByTech = false;
+  const allTrees = [TECH_TREE, CULTURE_TREE];
+  
+  for (const tree of allTrees) {
+    for (const techId in tree) {
+      const node = tree[techId];
+      if (node.effects && node.effects.some(e => e.type === 'unlockBuilding' && e.target === buildingId)) {
+        isControlledByTech = true;
+        break;
+      }
+    }
+    if (isControlledByTech) break;
+  }
+
+  // 💡 關鍵修正：
+  // 如果該建築受科技/文化樹控制，必須嚴格檢查玩家是否已經研發了該科技（activeTreeEffects 是否包含它）
+  if (isControlledByTech) {
+    const activeEffects = activeTreeEffects();
+    return activeEffects.some(e => e.type === 'unlockBuilding' && e.target === buildingId);
+  }
+
+  // 3. 如果該建築「沒有」被任何科技/文化樹控制，但它是透過其他建築的「升級」取得的目標，則視為解鎖
+  for (const id in CARDS) {
+    const card = CARDS[id];
+    if (card.upgradesTo) {
+      const targets = Array.isArray(card.upgradesTo) ? card.upgradesTo : [card.upgradesTo];
+      if (targets.includes(buildingId)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // 依稀有度取得牌庫張數
@@ -438,8 +492,8 @@ export function calculate(){
     perTurn.gold -= totalUpkeep;
   }
 
-  state.maxPopulation = Math.max(1, state.basePopulation + popBonus - state.lostPopulation);
-  state.population = Math.max(0, state.maxPopulation - usedPop);
+  state.maxPopulation = state.basePopulation + popBonus - state.lostPopulation;
+  state.population = state.maxPopulation - usedPop;
   state.perTurn = perTurn;
   state.scores = scores;
 }
@@ -447,23 +501,84 @@ export function calculate(){
 // ===== 計分（集中管理）=====
 // 最終分數 = 所有 group:'score' 的產出加總。想新增分數種類：在 config.js 的 OUTPUTS 加一筆 group:'score' 即可。
 export function getScoreBreakdown(){
-  const out = [];
-  for(const id in OUTPUTS){
-    if(OUTPUTS[id].group !== 'score') continue;
-    out.push({ key:id, label:OUTPUTS[id].label, value:(state.scores && state.scores[id]) || 0 });
+  let buildingEffectScore = (state.scores && state.scores.buildingScore) || 0;
+  
+  let rarityScore = 0;
+  if (state && state.board) {
+    state.board.forEach(cell => {
+      if (cell.building) {
+        let cardDef = CARDS[cell.building];
+        let rConfig = RARITY_CONFIG[cardDef?.rarity] || RARITY_CONFIG.common;
+        rarityScore += (rConfig.score || 5) * (cell.level || 1);
+      }
+    });
   }
-  return out;
+
+  let maxPop = state.maxPopulation || 1;
+  let populationScore = Math.floor(maxPop / 10) * 30;
+
+  let techCultureScore = getUnlockedTechAndCultureCount() * 20;
+
+  return [
+    { key: 'buildingEffect', label: '建築效果分', value: buildingEffectScore },
+    { key: 'rarity', label: '建築稀有度分', value: rarityScore },
+    { key: 'population', label: '人口規模里程碑', value: populationScore },
+    { key: 'techCulture', label: '科技與文化解鎖', value: techCultureScore }
+  ];
 }
 
-export function calculateTotalScore(){
-  // 1. 建築分總計
-  let buildingScore = (state.scores && state.scores.buildingScore) || 0;
-  
-  // 2. 遊戲過程中產生的資源總和（金幣 + 信仰點 + 科技點 + 文化點）
-  let totalResources = (state.gold || 0) + (state.faith || 0) + (state.techPoints || 0) + (state.culturePoints || 0);
-  
-  return buildingScore + totalResources;
+// 計算目前已解鎖的科技與文化節點總數
+export function getUnlockedTechAndCultureCount() {
+  let count = 0;
+  // 假設你的 tech 和 culture 解鎖狀態記錄在 state 裡面 (例如 state.unlockedTechs 與 state.unlockedCultures)
+  if (state.unlockedTechs) count += Object.keys(state.unlockedTechs).length;
+  if (state.unlockedCultures) count += Object.keys(state.unlockedCultures).length;
+  return count;
 }
+
+// 綜合計分函式
+export function calculateTotalScore(){
+  let totalScore = 0;
+
+  // 1. 建築效果提供的建築分（來自 state.scores）
+  let buildingEffectScore = (state.scores && state.scores.buildingScore) || 0;
+  totalScore += buildingEffectScore;
+
+  // 2. 建築稀有度提供的基本分（遍歷棋盤上所有現存建築）
+  let rarityScore = 0;
+  if (state && state.board) {
+    state.board.forEach(cell => {
+      if (cell.building) {
+        let cardDef = CARDS[cell.building];
+        if (cardDef && cardDef.rarity) {
+          let rarityConfig = RARITY_CONFIG[cardDef.rarity];
+          if (rarityConfig && rarityConfig.score) {
+            rarityScore += rarityConfig.score * (cell.level || 1); // 可視情況乘上等級
+          }
+        } else {
+          // 預設 common 的分數
+          rarityScore += (RARITY_CONFIG.common ? RARITY_CONFIG.common.score : 2);
+        }
+      }
+    });
+  }
+  totalScore += rarityScore;
+
+  // 最大人口數量每達到 10 的倍數獲得分數
+  let maxPop = state.maxPopulation || 1;
+  let popMilestones = Math.floor(maxPop / 10);
+  let populationScore = popMilestones * 30; // 每個區間的分數
+  totalScore += populationScore;
+
+  // 每解鎖一個科技/文化獲得固定分數
+  let unlockedNodesCount = getUnlockedTechAndCultureCount();
+  let techCultureScore = unlockedNodesCount * 20; //每個節點的分數 
+  totalScore += techCultureScore;
+
+  return totalScore;
+}
+
+// ===== 計分（集中管理）結束=====//
 
 export function canAfford(type){
   const d=CARDS[type];
@@ -508,7 +623,7 @@ export function previewPlacement(card, cell){
   try{
     cell.building = card.type;
     cell.level = 1;
-    if(cell.biome === 'forest') cell.biome = 'grassland'; // 開發森林後保留地形，只把地貌改為草原
+    if(cell.biome === 'forest' && !d.preserveForest ) cell.biome = 'grassland'; // 開發森林後保留地形，只把地貌改為草原
     calculate();
     const after = snapshotTotals();
     result.delta = {};
@@ -553,7 +668,7 @@ export function placeCard(card,cell){
   state.gold -= d.cost.gold;
   cell.building=card.type;
   cell.level=1;
-  if(cell.biome==='forest') cell.biome='grassland';
+  if(cell.biome==='forest' && !d.preserveForest ) cell.biome='grassland';
   const gains = computeOnBuild(card.type, cell);
   if(Object.keys(gains).length){
     applyGains(gains);
@@ -648,22 +763,23 @@ export function getNextMilestone() {
   const currentTurn = state.turn;
   const currentScore = calculateTotalScore();
   
-  // 找出比目前回合大的下一個門檻回合
-  const upcomingTurns = Object.keys(TURN_SCORE_MILESTONES)
-    .map(Number)
-    .filter(t => t >= currentTurn)
-    .sort((a, b) => a - b);
+													 
+  const upcomingTurns = [];
+  for (let turn = 10; turn < MAX_TURNS; turn += 10) {
+    if (turn >= currentTurn) upcomingTurns.push(turn);
+  }
+  if (upcomingTurns.length === 0) return null;
 
-  if (upcomingTurns.length === 0) return null; // 沒有後續門檻
+																	
 
   const targetTurn = upcomingTurns[0];
-  const targetScore = TURN_SCORE_MILESTONES[targetTurn];
-  const remaining = Math.max(0, targetScore - currentScore);
+  const targetScore = getRequiredScoreForTurn(targetTurn);
+															
 
   return {
     turn: targetTurn,
-    targetScore: targetScore,
-    remaining: remaining
+    targetScore,
+    remaining: Math.max(0, targetScore - currentScore)
   };
 }
 
@@ -687,25 +803,25 @@ export function endTurn(){
   }
   playSound('coin');
 
-  // 人口歸零與回合門檻判定...（保持原本邏輯）
-  if (state.maxPopulation <= 0 || (state.lostPopulation >= state.basePopulation)) {
+  // 人口歸零與回合門檻判定...
+  if (state.population <= 0 && state.maxPopulation <= 0) {
     state.gameOver = true;
-    state.failReason = '人口完全歸零與流失，城市宣告荒廢！';
+    state.failReason = '城市已無可用勞動力，宣告荒廢！';
     return;
   }
 
   state.turn++;
   state.selected = null;
 
-  // 檢查 10/20 回合門檻...
+  // 每 10 回合依公式檢查一次中期分數，不再依賴固定門檻表。
   const checkingTurn = state.turn - 1;
-  if (TURN_SCORE_MILESTONES[checkingTurn]) {
-    const requiredScore = TURN_SCORE_MILESTONES[checkingTurn];
-    if (calculateTotalScore() < requiredScore) {
-      state.gameOver = true;
-      state.failReason = `第 ${checkingTurn} 回合結束時總積分未達標。`;
-      return;
-    }
+											
+  const requiredScore = getRequiredScoreForTurn(checkingTurn);
+  if (requiredScore !== null && calculateTotalScore() < requiredScore) {
+    state.gameOver = true;
+    state.failReason = `第 ${checkingTurn} 回合結束時總積分未達標（需要 ${requiredScore} 分）。`;
+    return;
+	 
   }
 
   if(state.turn > MAX_TURNS){

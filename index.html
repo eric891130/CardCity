@@ -19,14 +19,22 @@
   </div>
 </header>
 <section class="stats">
-  <div class="stat"><label>回合</label><strong id="turnStat">1 / 30</strong><div class="small" id="phaseStat">建設階段</div></div>
-  <div class="stat"><label>人口 (👤)</label><strong id="popStat" style="color:var(--orange)">3 / 3</strong><div class="small" id="foodDeficitHint">可用 / 上限</div></div>
-  <div class="stat"><label>存糧 (🍞)</label><strong id="foodStat" style="color:var(--green)">5</strong><div class="small" id="foodConsumeStat">產出 / 消耗</div></div>
-  <div class="stat"><label>金幣 (◈)</label><strong id="goldStat" style="color:var(--gold)">25</strong><div class="small" id="incomeStat">收入 +5</div></div>
-  <div class="stat"><label>信仰 (⛪)</label><strong id="faithStat" style="color:var(--white)">10 (+2)</strong><div class="small">奇蹟貨幣</div></div>
-  <div class="stat"><label>科技點 (🔬)</label><strong id="techPointsHeaderStat" style="color:var(--blue)">0 (+2)</strong><div class="small">研發專用點數</div></div>
-  <div class="stat"><label>文化點 (🎭)</label><strong id="culturePointsHeaderStat" style="color:var(--purple)">0 (+2)</strong><div class="small">政策解鎖點數</div></div>
-  <div class="stat"><label>總積分 (★)</label><strong id="scoreStat" style="color:var(--gold)">0</strong><div class="small" id="scoreTargetHint">綜合評分</div>
+  <div class="stat" id="statTurnStat" style="cursor: pointer;" title="點擊切換至城市分頁" >
+  <label>回合</label><strong id="turnStat">1 / 30</strong><div class="small" id="phaseStat">建設階段</div></div>
+  <div class="stat" id="statPOPStat" style="cursor: pointer;" title="點擊切換至城市分頁" >
+  <label>人口 (👤)</label><strong id="popStat" style="color:var(--orange)">3 / 3</strong><div class="small" id="foodDeficitHint">可用 / 上限</div></div>
+  <div class="stat" id="statFoodStat" style="cursor: pointer;" title="點擊切換至城市分頁" >
+  <label>存糧 (🍞)</label><strong id="foodStat" style="color:var(--green)">5</strong><div class="small" id="foodConsumeStat">產出 / 消耗</div></div>
+  <div class="stat">
+  <label>金幣 (◈)</label><strong id="goldStat" style="color:var(--gold)">25</strong><div class="small" >收入</div></div>
+  <div class="stat">
+  <label>信仰 (⛪)</label><strong id="faithStat" style="color:var(--white)">10 (+2)</strong><div class="small">奇蹟貨幣</div></div>
+  <div class="stat" id="statTechStat" style="cursor: pointer;" title="點擊切換至科技樹分頁" >
+  <label>科技點 (🔬)</label><strong id="techPointsHeaderStat" style="color:var(--blue)">0 (+2)</strong><div class="small">研發點數</div></div>
+  <div class="stat" id="statCultureStat" style="cursor: pointer;" title="點擊切換至文化樹分頁">
+  <label>文化點 (🎭)</label><strong id="culturePointsHeaderStat" style="color:var(--purple)">0 (+2)</strong><div class="small">文化發展點數</div></div>
+  <div class="stat" id="statScoreStat" style="cursor: pointer;" title="點擊查看詳細分數來源統計"> 
+  <label>總積分 (★)</label><strong id="scoreStat" style="color:var(--gold)">0</strong><div class="small" id="scoreTargetHint">綜合評分</div>
 </section>
 
 <nav class="tab-bar">
@@ -227,18 +235,23 @@
 	========================================================================= -->
 	<!--
 	<div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);">vVERSION (目前版本)</strong> <small style="color:var(--muted);">- YYYY-MM-DD</small>
+	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- YYYY-MM-DD</small>
 		<ul style="margin:5px 0; padding-left:20px;">
-		<li><b>【新增】核心功能名稱</b>：簡短說明該功能的作用與玩法影響。</li>
-		<li><b>【優化】介面或體驗改善</b>：說明調整了哪些UI介面或操作流程。</li>
-		<li><b>【平衡】數值調整</b>：說明調整了哪些建築費用、產出或機率。</li>
-		<li><b>【修復】 Bug 修復</b>：說明修復了什麼問題或崩潰狀況。</li>
+		<li></li>
       </ul>
     </div>
 	--> 
 	
 	  <div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-23</small>
+	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-24</small>
+		<ul style="margin:5px 0; padding-left:20px;">
+		<li>修改了計算分數的系統，可以點擊統計欄的總分查看分數的來源。</li>
+		<li>修改大部分建築的設定，新增一些建築。</li>
+      </ul>
+    </div>
+	
+	  <div style="margin-bottom:15px;">
+	  <strong style="color:var(--gold);" >v0.13.0</strong> <small style="color:var(--muted);">- 2026-10-23</small>
 		<ul style="margin:5px 0; padding-left:20px;">
 		<li>新增了建築維護費機制(但都還是0，因為我還在測)</li>
 		<li>更新了地形地貌系統，改變地形生成的邏輯，不再是完全隨機</li>
