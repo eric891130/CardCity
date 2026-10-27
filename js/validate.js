@@ -10,6 +10,7 @@ const LEGACY_EFFECT_FIELDS = { kind: 'type', key: 'output', category: 'output', 
 
 export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TECH_TREE, culture: CULTURE_TREE }) {
   const problems = [];
+  const unlockMap = {};
   const bad = (where, text) => problems.push(`[${where}] ${text}`);
   const isNum = v => typeof v === 'number' && Number.isFinite(v);
   const landforms = Object.keys(LANDFORM_NAMES);
@@ -97,16 +98,20 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
       const targets = Array.isArray(c.upgradesTo) ? c.upgradesTo : [c.upgradesTo];
       targets.forEach(tId => {
         if (tId && (tId in cards)) {
-          upgradeTargets.add(tId); // 👈 2. 將升級目標加入集合
+          upgradeTargets.add(tId);
         }
       });
     }
   }
-  
-  for (const treeName in trees) {
-    const tree = trees[treeName];
+
+  // 💡 統一將 trees（無論是物件或陣列）轉換為統一的 [treeKey, treeObj] 陣列安全走訪
+  const treeEntries = Array.isArray(trees) ? trees : Object.entries(trees).map(([k, v]) => ({ name: k, tree: v }));
+
+  treeEntries.forEach(({ name: treeKey, tree }) => {
+    const displayName = treeKey === 'tech' || treeKey === '科技樹' ? '科技樹' : (treeKey === 'culture' || treeKey === '文化樹' ? '文化樹' : treeKey);
+
     for (const id in tree) {
-      const n = tree[id], at = `${treeName === 'tech' ? 'TECH_TREE' : 'CULTURE_TREE'}.${id}`;
+      const n = tree[id], at = `${displayName}.${id}`;
       if (typeof n.name !== 'string' || !n.name) bad(at, '缺少 name。');
       if (!isNum(n.cost)) bad(at, 'cost 必須是數字。');
       if (!Array.isArray(n.requires)) bad(at, 'requires 必須是陣列（沒有前置就寫 []）。');
@@ -133,6 +138,9 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
             if (e.mode === 'upgradeOnly') {
               upgradeOnlyBuildings.add(e.target);
             }
+            // 💡 同時在這裡順便登記重複解鎖檢查用的 unlockMap
+            if (!unlockMap[e.target]) unlockMap[e.target] = [];
+            unlockMap[e.target].push(`${displayName}的 [${n.name || id}]`);
           }
           if (Array.isArray(e.target) || e.target === 'any') bad(w, 'unlockBuilding 的 target 必須是單一建築 id。'); 
         }
@@ -145,6 +153,14 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
           if (typeof e.target !== 'string' || e.target === 'any') bad(w, 'effectBoost 的 target 必須是單一建築 id。');
         }
       });
+    }
+  });
+
+  // 💡 檢查是否有重複解鎖同一建築的情況
+  for (const buildingId in unlockMap) {
+    const sources = unlockMap[buildingId];
+    if (sources.length > 1) {
+      problems.push(`⚠️ 建築 [${CARDS[buildingId]?.name || buildingId}] 被多個科技重複解鎖：${sources.join(' 與 ')}`);
     }
   }
 

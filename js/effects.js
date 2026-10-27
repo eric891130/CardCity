@@ -106,6 +106,60 @@ export function activeTreeEffects(){
 export function unlockedBuildingIds(){
   return activeTreeEffects().filter(e => e.type === 'unlockBuilding').map(e => e.target);
 }
+// 針對單一科技/文化效果產生中文說明
+export function describeTreeEffect(e) {
+  if (!e || !e.type) return '';
+
+  switch (e.type) {
+    case 'unlockBuilding': {
+      const targetCard = CARDS[e.target];
+      const targetName = targetCard ? `${targetCard.emoji} ${targetCard.name}` : e.target;
+      const mode = e.mode || 'addPool';
+
+      if (mode === 'upgradeOnly') {
+        return `解鎖建築【${targetName}】（僅限升級獲得，不加入抽牌卡池）`;
+      } else if (mode === 'replacePool') {
+        const replaceCard = CARDS[e.replaces];
+        const replaceName = replaceCard ? `${replaceCard.emoji} ${replaceCard.name}` : e.replaces;
+        return `解鎖建築【${targetName}】（將卡池中的【${replaceName}】替換為此建築）`;
+      } else {
+        return `解鎖新建築【${targetName}】（加入抽牌卡池）`;
+      }
+    }
+
+    case 'buildingBonus': {
+      const targets = targetList(e.target);
+      const names = targets.map(id => (CARDS[id] ? `${CARDS[id].emoji} ${CARDS[id].name}` : id)).join('、');
+      const outputInfo = OUTPUTS[e.output];
+      const outputLabel = outputInfo ? outputInfo.label : e.output;
+      const sign = e.amount > 0 ? '+' : '';
+
+      return `所有 ${names} 每回合額外 ${outputLabel} ${sign}${e.amount}`;
+    }
+
+    case 'effectBoost': {
+      const targetCard = CARDS[e.target];
+      const targetName = targetCard ? `${targetCard.emoji} ${targetCard.name}` : e.target;
+      const effectTitle = EFFECT_TYPES[e.effectType]?.title || e.effectType;
+      const sign = e.amount > 0 ? '+' : '';
+
+      return `強化 ${targetName} 的「${effectTitle}」效果 ${sign}${e.amount}`;
+    }
+
+    default:
+      return '';
+  }
+}
+
+// 自動生成科技/文化節點的效果說明
+export function describeTreeNode(node) {
+  if (!node.effects || !node.effects.length) return '（無特殊效果）';
+  // 取得每個效果的文字說明陣列
+  const parts = node.effects.map(describeTreeEffect).filter(Boolean);
+  // 用 <br> 將每個效果隔開換行
+  return parts.length ? parts.join('<br>') : '（無特殊效果）';
+}
+
 
 // ---------- 計算 ----------
 export function emptyStats(){

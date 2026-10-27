@@ -91,7 +91,7 @@
     <section class="panel">
       <div class="panel-head">
         <div><h2>科技樹</h2><p>點擊科技節點查看效果與解鎖新技術！</p></div>
-        <span id="techPointsStat" style="color:var(--purple); font-weight:bold; font-size:16px;">🔬 0 點</span>
+        <span id="techPointsStat" style="color:var(--blue); font-weight:bold; font-size:16px;">🔬 0 點</span>
       </div>
       <div class="section-body" id="techTreeContainer"></div>
     </section>
@@ -103,7 +103,7 @@
     <section class="panel">
       <div class="panel-head">
         <div><h2>文化樹</h2><p>花費每回合產出的文化點來解鎖文化政策與藝術！</p></div>
-        <span id="culturePointsStat" style="color:var(--gold); font-weight:bold; font-size:16px;">🎭 0 點</span>
+        <span id="culturePointsStat" style="color:var(--purple); font-weight:bold; font-size:16px;">🎭 0 點</span>
       </div>
       <div class="section-body" id="cultureTreeContainer"></div>
     </section>
@@ -140,13 +140,14 @@
     <h2 id="techModalTitle">科技名稱</h2>
     <p id="techModalDesc" style="color:var(--text); margin:12px 0; line-height:1.5;"></p>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px;">
-      <span id="techModalCost" style="color:var(--purple); font-weight:bold; font-size:15px;">研發消耗：0 🔬</span>
+      <span id="techModalCost" style="color:var(--blue); font-weight:bold; font-size:15px;">研發消耗：0 🔬</span>
       <span id="techModalStatus" style="font-weight:bold; font-size:13px;"></span>
     </div>
     <div class="action-row" style="margin-top:20px;">
       <button class="primary" id="techModalResearchBtn">研發科技</button>
       <button id="techModalClose">關閉</button>
     </div>
+      <div id="techModalFlavor" style="border-top:1px solid var(--line); margin-top:15px; padding-top:10px; text-align:right; font-style:italic; color:var(--muted); font-size:12px; display:none;"></div>
   </div>
 </div>
 
@@ -155,13 +156,14 @@
     <h2 id="cultureModalTitle">文化名稱</h2>
     <p id="cultureModalDesc" style="color:var(--text); margin:12px 0; line-height:1.5;"></p>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px;">
-      <span id="cultureModalCost" style="color:var(--gold); font-weight:bold; font-size:15px;">解鎖消耗：0 🎭</span>
+      <span id="cultureModalCost" style="color:var(--purple); font-weight:bold; font-size:15px;">解鎖消耗：0 🎭</span>
       <span id="cultureModalStatus" style="font-weight:bold; font-size:13px;"></span>
     </div>
     <div class="action-row" style="margin-top:20px;">
       <button class="primary" id="cultureModalResearchBtn">解鎖文化</button>
       <button id="cultureModalClose">關閉</button>
     </div>
+	<div id="cultureModalFlavor" style="border-top:1px solid var(--line); margin-top:15px; padding-top:10px; text-align:right; font-style:italic; color:var(--muted); font-size:12px; display:none;"></div>
   </div>
 </div>
 
@@ -241,9 +243,17 @@
       </ul>
     </div>
 	--> 
+	<div style="margin-bottom:15px;">
+	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-28</small>
+		<ul style="margin:5px 0; padding-left:20px;">
+		<li>修改了人口增長的機制。</li>
+		<li>新增一些科技/文化節點。</li>
+		<li>一些基礎遊戲機制的更新。</li>
+      </ul>
+    </div>
 	
 	  <div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-24</small>
+	  <strong style="color:var(--gold);" >v0.13.4</strong> <small style="color:var(--muted);">- 2026-10-24</small>
 		<ul style="margin:5px 0; padding-left:20px;">
 		<li>修改了計算分數的系統，可以點擊統計欄的總分查看分數的來源。</li>
 		<li>修改大部分建築的設定，新增一些建築。</li>
@@ -309,21 +319,7 @@
       <button class="icon-btn" id="deckModalClose" style="font-size:18px;">✕</button>
     </div>
     
-    <!-- 🔽 新增：說明文字與排序控制列 -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-      <p style="font-size:12px; color:var(--muted); margin:0;">以下為目前牌庫中剩餘的卡片，以及解鎖的完整可用卡池。</p>
-      <div style="display:flex; align-items:center; gap:6px;">
-        <span style="font-size:12px; color:var(--muted);">排序：</span>
-        <select id="deckSortSelect" style="background:#101820; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:2px 6px; font-size:12px; cursor:pointer;">
-          <option value="rarityAsc">稀有度 (低→高)</option>
-		  <option value="rarityDesc">稀有度 (高→低)</option>
-          <option value="costAsc">費用 (低→高)</option>
-          <option value="costDesc">費用 (高→低)</option>
-          <option value="name">名稱筆畫</option>
-          <option value="count">剩餘張數</option>
-        </select>
-      </div>
-    </div>
+
 
     <!-- 內容列表容器 -->
     <div id="deckModalContent" style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; padding-right: 4px;">

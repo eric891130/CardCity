@@ -2,7 +2,8 @@
 // 繪製、節點視窗、解鎖流程全部共用同一份程式碼。
 import { state, message, playSound } from './state.js';
 import { TECH_TREE, CULTURE_TREE } from './config.js';
-import { availableCardPool, addCardsToDeck } from './game.js';
+import { availableCardPool} from './game.js';
+import { describeTreeNode } from './effects.js';
 
 const $ = id => document.getElementById(id);
 
@@ -41,14 +42,11 @@ export function renderTree(kind, onNodeClick) {
   el.innerHTML = '';
   $(meta.pointsStatId).textContent = `${meta.icon} ${state[meta.pointsKey]} 點`;
 
-  // 外層負責橫向捲動：層級變多、寬度超過面板時不會被裁掉。
-  // 連線的 SVG 畫在 wrapper 裡、跟節點一起捲動，所以量到的座標永遠正確。
   const scroller = document.createElement('div');
   scroller.style.cssText = 'width:100%; overflow-x:auto; overflow-y:hidden;';
 
   const wrapper = document.createElement('div');
   wrapper.className = 'tech-tree-wrapper';
-  // 蓋過 CSS 裡縱向排版用的 flex column：寬度由內容撐開，但至少填滿整個面板
   wrapper.style.cssText = 'position:relative; display:block; width:max-content; min-width:100%; box-sizing:border-box;';
 
   const svgNS = 'http://www.w3.org/2000/svg';
@@ -60,20 +58,20 @@ export function renderTree(kind, onNodeClick) {
   const marker = document.createElementNS(svgNS, 'marker');
   marker.setAttribute('id', markerId);
   marker.setAttribute('viewBox', '0 0 10 10');
-  marker.setAttribute('refX', '5');
+  marker.setAttribute('refX', '6');
   marker.setAttribute('refY', '5');
   marker.setAttribute('markerWidth', '6');
   marker.setAttribute('markerHeight', '6');
   marker.setAttribute('orient', 'auto-start-reverse');
   const markerPath = document.createElementNS(svgNS, 'path');
   markerPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-  markerPath.setAttribute('fill', 'var(--muted)');
+  markerPath.setAttribute('fill', 'var(--line, #555)');
   marker.appendChild(markerPath);
   defs.appendChild(marker);
   svg.appendChild(defs);
   wrapper.appendChild(svg);
 
-  // 依「前置節點的最深層級 + 1」決定每個節點在第幾欄
+  // 1. 計算每個節點的深度層級 (Level)
   const levels = {};
   const getLevel = id => {
     if(levels[id] !== undefined) return levels[id];
@@ -86,16 +84,27 @@ export function renderTree(kind, onNodeClick) {
   const tierMap = {};
   for(const id in tree) (tierMap[levels[id]] = tierMap[levels[id]] || []).push(id);
 
+  // 💡 【優化點 1】：對每一欄內部的節點排序，儘量讓連線來源靠近的節點排在相近的高度的上/下位置，減少線條交叉
+  for (const lvl in tierMap) {
+    tierMap[lvl].sort((a, b) => {
+      const reqA = tree[a].requires || [];
+      const reqB = tree[b].requires || [];
+      if (reqA.length && reqB.length) {
+        return reqA[0].localeCompare(reqB[0]);
+      }
+      return 0;
+    });
+  }
+
   const maxLevel = Math.max(...Object.keys(tierMap).map(Number));
-  // 所有欄由左到右排成一列；欄與欄之間留出空間給連線與箭頭。align-items:center → 節點比較少的欄會垂直置中
   const columns = document.createElement('div');
-  columns.style.cssText = 'display:flex; flex-direction:row; align-items:center; justify-content:center; gap:80px; position:relative; z-index:2;';
+  columns.style.cssText = 'display:flex; flex-direction:row; align-items:center; justify-content:center; gap:90px; position:relative; z-index:2; padding:20px;';
 
   for(let lvl = 0; lvl <= maxLevel; lvl++) {
     const col = document.createElement('div');
     col.className = 'tech-col';
-    col.style.cssText = 'display:flex; flex-direction:column; justify-content:center; gap:24px;';
-    tierMap[lvl].forEach(id => {
+    col.style.cssText = 'display:flex; flex-direction:column; justify-content:center; gap:28px;';
+    (tierMap[lvl] || []).forEach(id => {
       const node = tree[id];
       const canUnlock = state[meta.pointsKey] >= node.cost && requirementsMet(meta, node);
       const statusClass = node.unlocked ? 'unlocked' : (canUnlock ? 'available' : 'locked');
@@ -112,27 +121,34 @@ export function renderTree(kind, onNodeClick) {
   scroller.appendChild(wrapper);
   el.appendChild(scroller);
 
-  // 節點排版完成後，量測位置再畫出前置關係的連線：左節點右側中點 → 右節點左側中點（水平的 S 形曲線）
+  // 💡 【優化點 2】：改進平滑平行的 SVG 連線演算法，避免打結與過度拉扭
   requestAnimationFrame(() => {
     const wrapperRect = wrapper.getBoundingClientRect();
     for(const id in tree) {
       const node = tree[id];
       if(!node.requires || node.requires.length === 0) continue;
       const childEl = document.getElementById(`${p}-node-${id}`);
+      
       node.requires.forEach(reqId => {
         const parentEl = document.getElementById(`${p}-node-${reqId}`);
         if(!parentEl || !childEl) return;
         const pRect = parentEl.getBoundingClientRect();
         const cRect = childEl.getBoundingClientRect();
+
         const x1 = pRect.right - wrapperRect.left;
         const y1 = pRect.top + pRect.height / 2 - wrapperRect.top;
         const x2 = cRect.left - wrapperRect.left;
         const y2 = cRect.top + cRect.height / 2 - wrapperRect.top;
-        const midX = (x1 + x2) / 2;
+
+        // 計算兩點之間的水平距離，以此動態調節 Control Point Offset，避免打結
+        const deltaX = Math.abs(x2 - x1);
+        const controlOffset = Math.min(Math.max(deltaX * 0.5, 30), 80);
+
         const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`);
-        path.setAttribute('stroke', 'var(--line)');
-        path.setAttribute('stroke-width', '2');
+        // 使用動態控制點：C (x1 + controlOffset, y1) (x2 - controlOffset, y2) (x2, y2)
+        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('stroke', node.unlocked ? 'var(--gold, #f1c40f)' : 'var(--line, #444)');
+        path.setAttribute('stroke-width', node.unlocked ? '2.5' : '1.5');
         path.setAttribute('fill', 'none');
         path.setAttribute('marker-end', `url(#${markerId})`);
         svg.appendChild(path);
@@ -146,12 +162,22 @@ export function openTreeModal(kind, id) {
   const meta = TREES[kind], node = meta.tree[id], p = meta.prefix;
   selectedNode[kind] = id;
   $(`${p}ModalTitle`).textContent = `${node.icon} ${node.name}`;
-  $(`${p}ModalDesc`).textContent = node.desc;
+  $(`${p}ModalDesc`).innerHTML = describeTreeNode(node);
   $(`${p}ModalCost`).textContent = `${meta.costLabel}：${node.cost} ${meta.icon}`;
 
   const statusEl = $(`${p}ModalStatus`);
   const btn = $(`${p}ModalResearchBtn`);
-
+  
+  const flavorEl = $(`${p}ModalFlavor`);
+  if (flavorEl) {
+    if (node.desc) {
+      flavorEl.textContent = node.desc;
+      flavorEl.style.display = 'block';
+    } else {
+      flavorEl.style.display = 'none';
+    }
+  }
+  
   if(node.unlocked) {
     statusEl.textContent = `狀態：${meta.doneText} ✓`;
     statusEl.style.color = 'var(--green)';
@@ -209,15 +235,7 @@ export function unlockSelectedNode(kind, onDone) {
   (node.effects || []).forEach(e => {
     if (e.type === 'unlockBuilding') {
       if (e.mode === 'replacePool' && e.replaces) {
-        // 1. 將現有牌庫 (state.deck) 裡的舊牌替換成新牌
-        state.deck = state.deck.map(card => {
-          const cType = (typeof card === 'object' && card !== null) ? card.type : card;
-          if (cType === e.replaces) {
-            return typeof card === 'object' ? { ...card, type: e.target } : e.target;
-          }
-          return card;
-        });
-        // 2. 將現有手牌 (state.hand) 裡的舊牌也替換成新牌
+        // 1. 將現有手牌 (state.hand) 裡的舊牌替換成新牌（已無實體牌庫，故只需處理手牌或直接略過）
         state.hand = state.hand.map(card => {
           const cType = (typeof card === 'object' && card !== null) ? card.type : card;
           if (cType === e.replaces) {
@@ -225,9 +243,6 @@ export function unlockSelectedNode(kind, onDone) {
           }
           return card;
         });
-      } else if (e.mode !== 'upgradeOnly') {
-        // 一般解鎖：加入卡池與牌庫
-          addCardsToDeck(e.target);
       }
     }
   });

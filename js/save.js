@@ -88,6 +88,17 @@ function migrateSave(data) {
     generateRiverEdges(s.board || []);
   }
 
+  if(v < 5) {
+    // v4 → v5：新增實際人口。舊版的 maxPopulation 曾用於糧食消耗，
+    // 因此以舊人口容量作為遷移後的初始實際人口。
+    if(!Number.isFinite(s.currentPopulation)) {
+      s.currentPopulation = Math.max(1, Number(s.maxPopulation) || Number(s.basePopulation) || 1);
+    }
+    if(!Number.isFinite(s.basePopulation)) s.basePopulation = 1;
+    if(!Number.isFinite(s.storedFood)) s.storedFood = 5;
+    if(!Number.isFinite(s.lostPopulation)) s.lostPopulation = 0;
+  }
+
   data.version = SAVE_VERSION;
   return data;
 }

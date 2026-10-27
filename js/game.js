@@ -55,117 +55,110 @@ function addRiverSegment(board, x0, y0, x1, y1) {
 }
 
 export function generateRiverEdges(board) {
-  // 已有河流資料時保留，避免覆蓋既有地圖或存檔[cite: 8]
-  if (board.some(c => Array.isArray(c.riverEdges) && c.riverEdges.length)) {
-    return board;
-  }
+  // 已有河流資料時保留，避免覆蓋既有地圖或存檔。
+  if (board.some(c => Array.isArray(c.riverEdges) && c.riverEdges.length)) return board;   
 
-  let segments = [];
-  let attempts = 0;
-  const MIN_LENGTH = 7; // 👈 規定河流最低長度限制
+  for (const c of board) c.riverEdges = [];
+				  
+  const MIN_TOTAL_LENGTH = Math.ceil(SIZE * 1.5); // 12x12 棋盤至少約 18 段河道
+  const MAX_RIVERS = 4;
+  const MAX_ATTEMPTS_PER_RIVER = 12;
+  const riverSegments = new Set();
 
-  // 🔄 持續嘗試隨機生成，直到河流長度達到 7 格以上，或超過最大嘗試次數
-  while (segments.length < MIN_LENGTH && attempts < 50) {
-    attempts++;
-    for (const c of board) c.riverEdges = [];
+  function traceRiver() {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_RIVER; attempt++) {
+      const edges = ['TOP', 'BOTTOM', 'LEFT', 'RIGHT'];
+      const chosenEdge = edges[Math.floor(Math.random() * edges.length)];
+      let vx, vy, lastDx = 0, lastDy = 0;
 
-    const edges = ['TOP', 'BOTTOM', 'LEFT', 'RIGHT'];
-    const chosenEdge = edges[Math.floor(Math.random() * edges.length)];
+      switch (chosenEdge) {
+        case 'TOP':    vx = Math.floor(Math.random() * (SIZE + 1)); vy = 0;    lastDy = 1; break;
+        case 'BOTTOM': vx = Math.floor(Math.random() * (SIZE + 1)); vy = SIZE; lastDy = -1; break;
+        case 'LEFT':   vx = 0;    vy = Math.floor(Math.random() * (SIZE + 1)); lastDx = 1; break;
+        case 'RIGHT':  vx = SIZE; vy = Math.floor(Math.random() * (SIZE + 1)); lastDx = -1; break;
+      }
 
-    let vx, vy;
-    let lastDx = 0, lastDy = 0;
+      const visited = new Set([`${vx},${vy}`]);
+      const path = [];
+      let steps = 0;
+      const maxSteps = SIZE * SIZE * 2;
+			   
+      while (steps < maxSteps) {
+        const options = [];
+        const dirs = [
+          { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+          { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
+        ];
 
-    // 隨機選取四周任一邊界作為起點[cite: 8]
-    switch (chosenEdge) {
-      case 'TOP':
-        vx = Math.floor(Math.random() * (SIZE + 1));
-        vy = 0;
-        lastDy = 1;
-        break;
-      case 'BOTTOM':
-        vx = Math.floor(Math.random() * (SIZE + 1));
-        vy = SIZE;
-        lastDy = -1;
-        break;
-      case 'LEFT':
-        vx = 0;
-        vy = Math.floor(Math.random() * (SIZE + 1));
-        lastDx = 1;
-        break;
-      case 'RIGHT':
-        vx = SIZE;
-        vy = Math.floor(Math.random() * (SIZE + 1));
-        lastDx = -1;
-        break;
-    }
+        for (const d of dirs) {
+          const nx = vx + d.dx, ny = vy + d.dy;
+          if (nx < 0 || nx > SIZE || ny < 0 || ny > SIZE) continue;
+          if (visited.has(`${nx},${ny}`)) continue;
+          if (d.dx === -lastDx && d.dy === -lastDy) continue;
 
-    const visited = new Set([vx + ',' + vy]);
-    segments = [];
-    let steps = 0;
-    const maxSteps = SIZE * SIZE * 4;
+          const weight = (d.dx === lastDx && d.dy === lastDy) ? 2 : 1;
+          options.push({ ...d, weight });
+        }
+        if (!options.length) break;
 
-    while (steps < maxSteps) {
-      const options = [];
-      const dirs = [
-        { dx: 0, dy: -1 },
-        { dx: 0, dy: 1 },
-        { dx: -1, dy: 0 },
-        { dx: 1, dy: 0 }
-      ];
-
-      for (const d of dirs) {
-        const nx = vx + d.dx;
-        const ny = vy + d.dy;
-
-        if (nx < 0 || nx > SIZE || ny < 0 || ny > SIZE) continue;
-        if (visited.has(nx + ',' + ny)) continue;
-
-        let w = 1.0;
-        if (d.dx === lastDx && d.dy === lastDy) {
-          w = 2.0; // 慣性權重
-        } else if (d.dx === -lastDx && d.dy === -lastDy) {
-          continue; // 禁止 180 度回頭
+        let r = Math.random() * options.reduce((sum, o) => sum + o.weight, 0);
+        let next = options[0];
+        for (const o of options) {
+          r -= o.weight;
+          if (r <= 0) { next = o; break; }
         }
 
-        options.push({ dx: d.dx, dy: d.dy, w });
+        const nx = vx + next.dx, ny = vy + next.dy;
+        path.push([vx, vy, nx, ny]);
+        visited.add(`${nx},${ny}`);
+        vx = nx; vy = ny;
+        lastDx = next.dx; lastDy = next.dy;
+        steps++;
+
+        // 至少走過數段後，碰到棋盤邊界便結束此條河流。
+        if ((vx === 0 || vx === SIZE || vy === 0 || vy === SIZE) && steps >= 4) break;
+
       }
 
-      if (options.length === 0) break;
-
-      let r = Math.random() * options.reduce((sum, o) => sum + o.w, 0);
-      let next = options[0];
-      for (const o of options) {
-        r -= o.w;
-        if (r <= 0) { next = o; break; }
-      }
-
-      const nx = vx + next.dx;
-      const ny = vy + next.dy;
-
-      segments.push([vx, vy, nx, ny]);
-      visited.add(nx + ',' + ny);
-
-      lastDx = next.dx;
-      lastDy = next.dy;
-      vx = nx;
-      vy = ny;
-      steps++;
-
-      // 碰到對側或其他邊界時結束[cite: 8]
-      const isAtBoundary = (vx === 0 || vx === SIZE || vy === 0 || vy === SIZE);
-      if (isAtBoundary && steps > 2) {
-        break;
-      }
+      if (path.length >= Math.max(5, Math.floor(SIZE * 0.55))) return path;
     }
+    return [];
   }
 
-  console.log(`🌊 [河流系統] 成功生成河流！總長度：${segments.length} 格（嘗試次數：${attempts}）`);
+  // 第一條河流必定生成；若河道總長不足，會繼續補生成。
+  // 達到最低長度後，仍有機率額外生成河流，最多四條。
+  let riverCount = 0;
+  while (riverCount < MAX_RIVERS) {
+    const shouldAddRiver = riverCount === 0 ||
+      [...riverSegments].length < MIN_TOTAL_LENGTH ||
+      Math.random() < 0.1;
+    if (!shouldAddRiver) break;
 
-  // 將所有產生的線段正式寫入棋盤格的共用邊界中
-  for (const [x0, y0, x1, y1] of segments) {
-    addRiverSegment(board, x0, y0, x1, y1);
+    const path = traceRiver();
+    if (!path.length) break;
+			  
+			  
+			  
+
+    let addedNewSegment = 0;
+    for (const [x0, y0, x1, y1] of path) {
+      const key = `${Math.min(x0,x1)},${Math.min(y0,y1)},${Math.max(x0,x1)},${Math.max(y0,y1)}`;
+      if (!riverSegments.has(key)) {
+        riverSegments.add(key);
+        addedNewSegment++;
+      }
+      addRiverSegment(board, x0, y0, x1, y1);
+    }
+    riverCount++;
+
+    // 防止因路徑重疊而一直無法增加總長。
+    if (addedNewSegment === 0 && riverCount >= 2 && riverSegments.size >= MIN_TOTAL_LENGTH) break;
+																	
+											
+										   
   }
 
+  console.log(`🌊 [河流系統] 生成 ${riverCount} 條河流，總長度 ${riverSegments.size} 段（目標至少 ${MIN_TOTAL_LENGTH} 段）`);
   return board;
 }
 
@@ -278,8 +271,8 @@ export function terrainMap(){
   }
   
   placeInitialBuilding(map, 'farm');
-  placeInitialBuilding(map, 'house');
-  
+  placeInitialBuilding(map, 'tent');
+  placeInitialBuilding(map, 'tent');
   return map;
 }
 
@@ -332,7 +325,6 @@ export function availableCardPool(){
 }
 
 // 判斷某個建築目前是否「已解鎖」（可用於升級檢核或抽卡）
-// 判斷某個建築目前是否「已解鎖」（可用於升級檢核或抽卡）
 export function isBuildingUnlocked(buildingId) {
   // 1. 如果在初始基礎卡池中，預設已解鎖[cite: 7]
   if (cardPool.includes(buildingId)) return true;
@@ -373,66 +365,50 @@ export function isBuildingUnlocked(buildingId) {
   return false;
 }
 
-// 依稀有度取得牌庫張數
-export function getCardDeckCount(cardId) {
-  const card = CARDS[cardId];
-  if (!card || !card.rarity || !RARITY_CONFIG[card.rarity]) return 2; // 預設 2 張
-  return RARITY_CONFIG[card.rarity].count;
-}
+// 依稀有度權重從目前已解鎖的卡池 (availableCardPool) 中隨機抽出一張卡片
+export function drawFromDeck() {
+  const pool = availableCardPool(); // 取得目前已解鎖且合法的卡片 ID 陣列
+  if (!pool || pool.length === 0) return newCard('house'); // 預防空卡池
 
-// 依稀有度初始化牌庫
-export function initDeck(pool) {
-  let deck = [];
+  // 將卡池依稀有度分類
+  const poolByRarity = { common: [], rare: [], epic: [], legendary: [] };
   pool.forEach(id => {
-    let count = getCardDeckCount(id);
-    for (let i = 0; i < count; i++) {
-      deck.push(id); 
-    }
+    const rarity = CARDS[id]?.rarity || 'common';
+    if (poolByRarity[rarity]) poolByRarity[rarity].push(id);
+    else poolByRarity.common.push(id);
   });
-  return shuffle(deck);
-}
 
-// 研發出新建築時，依稀有度加入張數
-export function addCardsToDeck(type) {
-  let count = getCardDeckCount(type);
-  state.deck = shuffle([...state.deck, ...Array(count).fill(type)]);
-}
+  // 計算目前卡池中「有卡可抽」的稀有度總權重
+  let totalWeight = 0;
+  const availableRarities = [];
 
-export function drawFromDeck(){
-  if(!state.deck.length) {
-    // 牌庫耗盡時，重新依稀有度配置洗牌生成
-    state.deck = initDeck(availableCardPool());
+  for (const rarity in RARITY_CONFIG) {
+    if (poolByRarity[rarity] && poolByRarity[rarity].length > 0) {
+      const w = RARITY_CONFIG[rarity].weight || 10;
+      totalWeight += w;
+      availableRarities.push({ rarity, weight: w });
+    }
   }
-  return newCard(state.deck.pop());
+
+  // 隨機決定本次抽卡獲得的稀有度
+  let roll = Math.random() * totalWeight;
+  let chosenRarity = availableRarities[0].rarity;
+
+  for (const item of availableRarities) {
+    roll -= item.weight;
+    if (roll <= 0) {
+      chosenRarity = item.rarity;
+      break;
+    }
+  }
+
+  // 從該稀有度的候選卡片中等機率隨機抽取一張
+  const candidates = poolByRarity[chosenRarity];
+  const chosenType = candidates[Math.floor(Math.random() * candidates.length)];
+
+  return newCard(chosenType);
 }
 
-// 統計目前牌庫剩餘的各張卡片數量
-export function getDeckComposition() {
-  const currentPool = availableCardPool();
-  const counts = {};
-  
-  // 初始化可用卡池的計數為 0
-  currentPool.forEach(id => { counts[id] = 0; });
-  
-  // 計算 state.deck 裡實際剩餘的張數（兼容物件 {type: 'xxx'} 或純字串 'xxx'）
-  if (state && state.deck) {
-    state.deck.forEach(card => {
-      // 判斷 card 是物件（有 type 屬性）還是直接就是字串 id
-      const cardType = (typeof card === 'object' && card !== null) ? card.type : card;
-      
-      if (cardType && counts[cardType] !== undefined) {
-        counts[cardType]++;
-      } else if (cardType) {
-        counts[cardType] = 1; // 預防萬一卡池外的新解鎖卡片
-      }
-    });
-  }
-  
-  return {
-    total: state && state.deck ? state.deck.length : 0,
-    counts: counts
-  };
-}
 // 商店只存 {id, locked}，不存函式（函式無法 JSON 存檔），顯示/購買時再從 SHOP_ITEMS 查表
 export function makeShop(){return shuffle(SHOP_ITEMS).slice(0, 3).map(item => ({ id: item.id, locked: false }));}
 // 重新整理商店：保留鎖定的商品，其餘重抽補滿 3 格（回合開始與手動刷新共用）
@@ -461,7 +437,7 @@ export function getRandomMissions(count, excludeIds = []) {
 // 每格的產出（cell.stats）由 effects.js 算出；這裡負責加總成：
 //   state.perTurn    每回合的資源產出（含基礎產出 BASE_PER_TURN）
 //   state.scores     目前的最終分數（建築的 xxxScore + 建造時永久獲得的 state.bonusScore）
-//   state.maxPopulation / state.population  人口上限 / 扣掉建築佔用後的可用人口
+//   state.maxPopulation / state.currentPopulation / state.population  人口容量 / 實際人口 / 扣掉工作人口後的可用人口
 export function calculate(){
   computeCellStats(state.board);
 
@@ -471,6 +447,7 @@ export function calculate(){
     if(OUTPUTS[id].group === 'score') scores[id] = (state.bonusScore && state.bonusScore[id]) || 0;
   }
   let popBonus = 0, usedPop = 0;
+  let maxFoodBonus = 0;
   let totalUpkeep = 0; // 👈 累計全城建築維護費
 
   for(const c of state.board){
@@ -478,6 +455,7 @@ export function calculate(){
     for(const id in perTurn) perTurn[id] += c.stats[id];
     for(const id in scores) scores[id] += c.stats[id];
     popBonus += c.stats.population;
+	maxFoodBonus += (c.stats.maxFood || 0);
     usedPop += CARDS[c.building].cost.pop || 0;
 
     // 計算該建築的維護費（隨等級倍增）
@@ -487,15 +465,36 @@ export function calculate(){
     }
   }
 
-  // 👈 將總維護費從每回合金幣產出中扣除
+  // 將總維護費從每回合金幣產出中扣除;每一點實際人口提供 1 點金幣收入
   if(perTurn.gold !== undefined) {
     perTurn.gold -= totalUpkeep;
+	perTurn.gold += (state.currentPopulation || 0);
   }
 
-  state.maxPopulation = state.basePopulation + popBonus - state.lostPopulation;
-  state.population = state.maxPopulation - usedPop;
+  state.maxStoredFood = Math.max(10, 25 + maxFoodBonus);
+
+  // 人口容量由基礎容量與建築效果決定；糧食短缺只影響實際人口，不再永久扣減容量。
+  state.maxPopulation = Math.max(1, popBonus);
+  // 舊存檔若沒有 currentPopulation，先以舊人口容量推定實際人口。
+  if(!Number.isFinite(state.currentPopulation)) state.currentPopulation = state.maxPopulation;
+  state.currentPopulation = Math.max(0, state.currentPopulation);
+  // 建築佔用的是工作人口；居民仍然存在並照常消耗糧食。
+  state.population = Math.max(0, Math.min(state.currentPopulation, state.maxPopulation) - usedPop);
   state.perTurn = perTurn;
   state.scores = scores;
+  
+  // 計算本回合預計增長的人口數（供 UI 顯示用）
+  const foodProduction = perTurn.food || 0;
+  const netFood = foodProduction - state.currentPopulation;
+  const foodAfterBalance = state.storedFood + netFood;
+  if (foodAfterBalance < 0 || state.currentPopulation >= state.maxPopulation) {
+    state.projectedGrowth = 0;
+  } else {
+    const foodStockGrowth = Math.floor(foodAfterBalance / 10);
+    const netFoodGrowth = Math.max(0, Math.floor(netFood));
+    const capacityGrowth = Math.max(0, state.maxPopulation - state.currentPopulation);
+    state.projectedGrowth = Math.min(foodStockGrowth, netFoodGrowth, capacityGrowth);
+  }
 }
 
 // ===== 計分（集中管理）=====
@@ -572,7 +571,7 @@ export function calculateTotalScore(){
 
   // 每解鎖一個科技/文化獲得固定分數
   let unlockedNodesCount = getUnlockedTechAndCultureCount();
-  let techCultureScore = unlockedNodesCount * 20; //每個節點的分數 
+  let techCultureScore = (unlockedNodesCount-1) * 20; //每個節點的分數 
   totalScore += techCultureScore;
 
   return totalScore;
@@ -594,7 +593,7 @@ export function canPlace(card,cell){
 
 function snapshotTotals(){
   const t = {
-    foodNet: state.perTurn.food - state.maxPopulation,   // 糧食淨值 = 產出 − 人口消耗
+    foodNet: state.perTurn.food - state.currentPopulation, // 糧食淨值 = 產出 − 實際人口消耗
     freePop: state.population                            // 可用人口（已扣除建築佔用）
   };
   for(const id in state.perTurn) if(id !== 'food') t[id] = state.perTurn[id];
@@ -691,6 +690,13 @@ export function demolishCell(cell) {
   cell.level = 1;
   playSound('place');
   calculate();
+  if(state.currentPopulation > state.maxPopulation){
+    const excess = state.currentPopulation - state.maxPopulation;
+    state.currentPopulation = state.maxPopulation;
+    calculate();
+    addLog(`⚠️ 人口容量下降，${excess} 名居民離開城市。`);
+  }
+  playSound('demolish');
   message(`已拆除 ${d.name}（拆除不會退還金錢）。`, false, true);
   addLog(`拆除了 ${d.name}。`);
   return true;
@@ -751,7 +757,7 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
   c.level = 1;
   c.stats = {};
 
-  playSound('coin');
+  playSound('upgrade');
   calculate();
   message(`成功將 ${d.name} 升級改造為 ${targetCard.emoji} ${targetCard.name}！`, false, true);
   addLog(`將 ${d.name}（(${c.x},${c.y})）升級改造為 ${targetCard.name}（-${upgradeCost} ◈）。`);
@@ -786,16 +792,47 @@ export function getNextMilestone() {
 export function endTurn(){
   if(state.gameOver) return;
   
-  // 糧食結算與人口流失邏輯...
-  let netFood = state.perTurn.food - state.maxPopulation;
-  state.storedFood += netFood;
-
-  if(state.storedFood < 0){
-    state.storedFood = 0;
-    state.lostPopulation += 1;
-    addLog(`⚠️ 存糧耗盡！庫存歸 0，人口流失 1 人！`);
+  // 容量降低時，超出容量的居民離開城市；這與糧食短缺分開處理。
+  if(state.currentPopulation > state.maxPopulation){
+    const excess = state.currentPopulation - state.maxPopulation;
+    state.currentPopulation = state.maxPopulation;
+    addLog(`⚠️ 人口容量不足，${excess} 名居民離開城市。`);
   }
-  
+
+  // 糧食先供應目前實際人口；工作人口仍是居民，因此同樣消耗糧食。
+  const foodProduction = state.perTurn.food || 0;
+  const netFood = foodProduction - state.currentPopulation;
+  const foodAfterBalance = state.storedFood + netFood;
+
+  if(foodAfterBalance < 0){
+    // 存糧與當回合產量仍不足的數量，就是本回合糧食短缺量。
+    const shortage = Math.ceil(-foodAfterBalance);
+    const lost = Math.min(state.currentPopulation, shortage);
+    state.currentPopulation -= lost;
+    state.storedFood = 0;
+    addLog(`⚠️ 糧食短缺 ${shortage} 點，人口流失 ${lost} 人。`);
+  } else {
+	  
+    if (foodAfterBalance > state.maxStoredFood) {
+      const spoiled = Math.floor(foodAfterBalance - state.maxStoredFood);
+      state.storedFood = state.maxStoredFood;
+      addLog(`🌾 糧食倉儲已滿 (${state.maxStoredFood})，${spoiled} 點糧食腐敗浪費了。`);
+    } else {
+      state.storedFood = foodAfterBalance;
+    }
+    
+    // 人口成長同時受糧食存量、糧食淨值與剩餘人口容量限制。
+    // 每累積 10 點存糧提供 1 個成長名額；淨糧食盈餘限制成長速度。
+    const foodStockGrowth = Math.floor(state.storedFood / 10);
+    const netFoodGrowth = Math.max(0, Math.floor(netFood));
+    const capacityGrowth = Math.max(0, state.maxPopulation - state.currentPopulation);
+    const growth = Math.min(foodStockGrowth, netFoodGrowth, capacityGrowth);
+    if(growth > 0){
+      state.currentPopulation += growth;
+      addLog(`👥 糧食充足，人口增加 ${growth} 人。`);
+    }
+  }
+
   // 其餘資源產出結算...
   for(const id in state.perTurn){
     if(id === 'food') continue;
@@ -803,10 +840,10 @@ export function endTurn(){
   }
   playSound('coin');
 
-  // 人口歸零與回合門檻判定...
-  if (state.population <= 0 && state.maxPopulation <= 0) {
+  // 人口歸零與回合門檻判定...（保持原本邏輯）
+  if (state.currentPopulation <= 0) {
     state.gameOver = true;
-    state.failReason = '城市已無可用勞動力，宣告荒廢！';
+    state.failReason = '糧食短缺導致人口完全流失，城市宣告荒廢！';
     return;
   }
 

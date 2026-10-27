@@ -1,11 +1,16 @@
-import { state } from './state.js';
-import { CARDS, LANDFORM_NAMES, BIOME_NAMES, SHOP_ITEMS, OUTPUTS, RARITY_CONFIG, TECH_TREE, CULTURE_TREE, cardPool} from './config.js';
+import { state, playSound } from './state.js';
+import { SIZE, CARDS, LANDFORM_NAMES, BIOME_NAMES, SHOP_ITEMS, OUTPUTS, RARITY_CONFIG, TECH_TREE, CULTURE_TREE, cardPool} from './config.js';
 import { canPlace, canAfford, isBuildingUnlocked } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { describeCard } from './effects.js';
 import { hasResearchableNodes } from './trees.js';
 
 const $ = id => document.getElementById(id);
+
+// 記錄上一次的狀態，避免重複觸發音效
+let prevHasMissionReward = false;
+let prevHasTechReward = false;
+let prevHasCultReward = false;
 
 // 格子上的簡短標示：每回合資源 / 人口用「+數字＋圖示」，最終分數合計成「★數字」
 export function formatBonus(s){
@@ -30,6 +35,12 @@ function formatStats(s, groups){
 }
 
 export function renderBoard(onCellClick, onCellPointer, onCellLeave){
+  const boardEl = document.getElementById('board');
+  if (!boardEl) return;
+
+  // 將 config.js 中的 SIZE 動態寫入 CSS 變數 --board-size
+  boardEl.style.setProperty('--board-size', SIZE);
+  
   const el=$('board');el.innerHTML='';
   hideCellTip();   // 格子會整批重建，舊的預覽提示一併收起
   const selCard = state.selected ? state.hand.find(h=>h.id===state.selected) : null;
@@ -130,6 +141,9 @@ export function renderHand(onCardClick, onToggleLock){
     // 取得該卡片的稀有度與對應顏色（若沒填預設為 common）
     let rarityKey = d.rarity || 'common';
     let rarityInfo = RARITY_CONFIG[rarityKey] || RARITY_CONFIG.common;
+	
+	let upkeepCost = d.upkeep || 0;
+    let upkeepHtml = upkeepCost > 0 ? `<br><span style="color:var(--orange, #e67e22);">維護: -${upkeepCost}◈/回合</span>` : '';
 
     let b=document.createElement('div');
     b.className = 'card' + (state.selected === card.id ? ' active' : '') + (card.locked ? ' locked' : '');
@@ -248,6 +262,13 @@ export function updateAllTabNotifications() {
     let progress = Math.max(0, currentTotal - (m.baseline || 0));
     return progress >= m.target;
   });
+  
+  // 偵測狀態變化：從沒有變成有獎勵時播音效
+  if (hasMissionReward && !prevHasMissionReward) {
+    playSound('win'); // 播放成功/解鎖音效
+  }
+  prevHasMissionReward = hasMissionReward;
+
   let missionTabBtn = document.querySelector('.tab-btn[data-tab="missions"]');
   if (missionTabBtn) {
     if (hasMissionReward) missionTabBtn.classList.add('has-reward');
@@ -255,16 +276,28 @@ export function updateAllTabNotifications() {
   }
 
   // 2. 科技樹紅點
+  let hasTechReward = hasResearchableNodes('tech');
+  if (hasTechReward && !prevHasTechReward) {
+    playSound('win');
+  }
+  prevHasTechReward = hasTechReward;
+
   let techBtn = document.querySelector('.tab-btn[data-tab="tech"]');
   if (techBtn) {
-    if (hasResearchableNodes('tech')) techBtn.classList.add('has-reward');
+    if (hasTechReward) techBtn.classList.add('has-reward');
     else techBtn.classList.remove('has-reward');
   }
 
   // 3. 文化樹紅點
+  let hasCultReward = hasResearchableNodes('culture');
+  if (hasCultReward && !prevHasCultReward) {
+    playSound('win');
+  }
+  prevHasCultReward = hasCultReward;
+
   let cultBtn = document.querySelector('.tab-btn[data-tab="culture"]');
   if (cultBtn) {
-    if (hasResearchableNodes('culture')) cultBtn.classList.add('has-reward');
+    if (hasCultReward) cultBtn.classList.add('has-reward');
     else cultBtn.classList.remove('has-reward');
   }
 }
@@ -407,10 +440,7 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
 
 // 輔助函式：檢查該卡片是由哪個科技、文化或初始卡池解鎖
 function getCardUnlockInfo(cardId) {
-  if (cardPool.includes(cardId)) {
-    return '初始解鎖 (基礎卡池)';
-  }
-  
+	
   // 檢查科技樹與文化樹
   const trees = [TECH_TREE, CULTURE_TREE];
   for (const tree of trees) {
@@ -421,7 +451,7 @@ function getCardUnlockInfo(cardId) {
         if (effect) {
           const mode = effect.mode || 'addPool';
           if (mode === 'upgradeOnly') {
-            return `科技/文化解鎖：${node.icon} ${node.name} <span style="color:var(--purple);">(僅限升級獲得，不入卡池)</span>`;
+            return `科技/文化解鎖：${node.icon} ${node.name} <span style="color:var(--purple);">(僅限升級)</span>`;
           } else if (mode === 'replacePool') {
             const relCard = CARDS[effect.replaces];
             const relName = relCard ? relCard.name : effect.replaces;
@@ -433,7 +463,7 @@ function getCardUnlockInfo(cardId) {
       }
     }
   }
-  return '特殊解鎖 / 隱藏';
+  return '初始解鎖';
 }
 
 // 輔助函式：反向檢查有哪些建築可以升級成當前卡片
