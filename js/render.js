@@ -496,6 +496,8 @@ function getCardUpgradeSources(targetId) {
 export function renderEncyclopedia() {
   const el = $('encyclopediaContainer');
   if(!el) return;
+  const countEl = $('encyclopediaBuildingCount');
+  if(countEl) countEl.textContent = `目前全遊戲內的建築：${Object.keys(CARDS).length} 種`;
 
   let html = '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">';
   

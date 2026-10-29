@@ -3,7 +3,7 @@
 //   version     → 存檔「資料格式」版本（SAVE_VERSION），格式有不相容變動時才加 1，並在 migrateSave 補一段遷移
 //   gameVersion → 遊戲顯示版本（VERSION），僅供除錯參考
 import { state, setState } from './state.js';
-import { TECH_TREE, CULTURE_TREE, SHOP_ITEMS, SIZE, VERSION, SAVE_VERSION, SAVE_KEY, LEGACY_SAVE_KEYS, CARDS, LANDFORM_NAMES, BIOME_NAMES } from './config.js';
+import { TECH_TREE, CULTURE_TREE, SHOP_ITEMS, SIZE, VERSION, SAVE_VERSION, SAVE_KEY, LEGACY_SAVE_KEYS, CARDS, LANDFORM_NAMES, BIOME_NAMES, updateDynamicTreeCosts } from './config.js';
 import { getRandomMissions, generateRiverEdges } from './game.js';
 
 export function writeSave() {
@@ -139,6 +139,11 @@ function migrateSave(data) {
     if(!Number.isFinite(s.lostPopulation)) s.lostPopulation = 0;
   }
 
+  if(v < 6) {
+    // v5 → v6：人口增長奇蹟改存為永久容量加成。
+    if(!Number.isFinite(s.bonusPopulation)) s.bonusPopulation = 0;
+  }
+
   data.version = SAVE_VERSION;
   return data;
 }
@@ -149,6 +154,10 @@ export function applySave(data) {
   // 先全部重置，避免殘留上一局的解鎖狀態
   for(const id in TECH_TREE) TECH_TREE[id].unlocked = !!(data.techTree && data.techTree[id]);
   for(const id in CULTURE_TREE) CULTURE_TREE[id].unlocked = !!(data.cultureTree && data.cultureTree[id]);
+  state.unlockedTechs = Object.keys(TECH_TREE).filter(id => TECH_TREE[id].unlocked);
+  state.unlockedCultures = Object.keys(CULTURE_TREE).filter(id => CULTURE_TREE[id].unlocked);
+  updateDynamicTreeCosts(TECH_TREE, state.unlockedTechs || []);
+  updateDynamicTreeCosts(CULTURE_TREE, state.unlockedCultures || []);
   if(!state.activeMissions) state.activeMissions = getRandomMissions(3);
   state.selected = null;
 }

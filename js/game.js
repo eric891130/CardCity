@@ -275,9 +275,9 @@ export function terrainMap(){
   placeInitialBuilding(map, 'tent');
 
 //  ===== 用於測試一些要求建築解鎖的功能 ===== //   
- placeInitialBuilding(map, 'market');
- placeInitialBuilding(map, 'business_center');
- placeInitialBuilding(map, 'mint');
+ // placeInitialBuilding(map, 'market');
+ // placeInitialBuilding(map, 'business_center');
+ // placeInitialBuilding(map, 'mint');
 //
 
   return map;
@@ -480,8 +480,8 @@ export function calculate(){
 
   state.maxStoredFood = Math.max(10, 25 + maxFoodBonus);
 
-  // 人口容量由基礎容量與建築效果決定；糧食短缺只影響實際人口，不再永久扣減容量。
-  state.maxPopulation = Math.max(1, popBonus);
+  // 人口容量由建築效果與永久加成決定；糧食短缺只影響實際人口，不再永久扣減容量。
+  state.maxPopulation = Math.max(1, popBonus + (Number(state.bonusPopulation) || 0));
   // 舊存檔若沒有 currentPopulation，先以舊人口容量推定實際人口。
   if(!Number.isFinite(state.currentPopulation)) state.currentPopulation = state.maxPopulation;
   state.currentPopulation = Math.max(0, state.currentPopulation);
@@ -523,7 +523,7 @@ export function getScoreBreakdown(){
   let maxPop = state.maxPopulation || 1;
   let populationScore = Math.floor(maxPop / 10) * 30;
 
-  let techCultureScore = (getUnlockedTechAndCultureCount() - 1) * 20;
+  let techCultureScore = (getUnlockedTechAndCultureCount() - 2) * 10;
   let achievementScore = state.achievementScore || 0;
 
   return [

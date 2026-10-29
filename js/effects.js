@@ -71,7 +71,7 @@ export const EFFECT_TYPES = {
   },
   buildingCount: {
     title: '建築數量門檻', phase: 'own', needs: ['min'], optional: ['target', 'targetType'], outputs: ANY_OUTPUT,
-    count: e => buildingInstances(countMatching(e.target, e.targetType)) >= e.min ? 1 : 0,
+    count: e => countMatching(e.target, e.targetType) >= e.min ? 1 : 0,
     cond: e => `全城至少有 ${e.min} 座${names(e.target, e.targetType)}時`
   },
   uniqueTypes: {

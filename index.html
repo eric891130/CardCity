@@ -20,7 +20,7 @@
 </header>
 <section class="stats">
   <div class="stat" id="statTurnStat" style="cursor: pointer;" title="點擊切換至城市分頁" >
-  <label>回合</label><strong id="turnStat">1 / 30</strong><div class="small" id="phaseStat">建設階段</div></div>
+  <label>回合</label><strong id="turnStat">1 / --</strong><div class="small" id="phaseStat">建設階段</div></div>
   <div class="stat" id="statPOPStat" style="cursor: pointer;" title="點擊切換至城市分頁" >
   <label>人口 (👤)</label><strong id="popStat" style="color:var(--orange)">3 / 3</strong><div class="small" id="foodDeficitHint">可用 / 上限</div></div>
   <div class="stat" id="statFoodStat" style="cursor: pointer;" title="點擊切換至城市分頁" >
@@ -140,6 +140,7 @@
           <h2>卡牌圖鑑</h2>
           <p>記載所有建築的詳細資料、解鎖條件與升級路線。</p>
         </div>
+        <strong id="encyclopediaBuildingCount" style="color:var(--gold); white-space:nowrap;">目前全遊戲內的建築：0 種</strong>
       </div>
       <div class="section-body" id="encyclopediaContainer"></div>
     </section>
@@ -219,32 +220,28 @@
     <!-- 分頁內容 1：新手教學 -->
     <div id="noticeTabTutorial" class="notice-tab-content" style="max-height: 360px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--text);">
       <h3 style="color:var(--gold); margin-top:0;">歡迎來到 Card City 卡牌城市！</h3>
-      <p>這是一款結合卡牌抽牌與動態網格建設的模擬策略遊戲。你的目標是在 <b>30 回合</b> 內，將城市發展成繁榮的文明！</p>
-      
-      <hr style="border:none; border-top:1px solid var(--line); margin:12px 0;">
-      
-      <h4 style="color:var(--green); margin:8px 0;">1. 基礎建造與人口</h4>
+      <p>用手牌建造城市、管理資源，並在 <b><span id="tutorialMaxTurns">--</span> 回合</b> 內累積足夠分數。<span id="tutorialScoreCheckpoints"></span>分數可點擊上方總分查看來源。</p>
+
+      <h4 style="color:var(--green); margin:8px 0;">開始建造</h4>
+      <ol>
+        <li>棋盤開局已有一座農田與兩座營地，初始卡池也有農田與營地：農田生產糧食，營地提高人口上限。住宅不在初始卡池；研發文化樹的「定居」節點後才會解鎖住宅。</li>
+        <li>選一張手牌，再點擊棋盤上的空格。格子的地形、地貌與河流條件會限制部分建築；放置前可查看提示與產出預覽。</li>
+        <li>建築需要金幣，也可能需要可用人口。棋盤上的人口是居民總數，上限由建築提供；可用人口則是扣除建築工作人口後的勞動力。</li>
+        <li>將同類建築卡打到已有的同類建築上，可升級至 Lv.3。達到 Lv.3 後，若有改造路線，可從建築資訊面板選擇改造。</li>
+      </ol>
+
+      <h4 style="color:var(--green); margin:8px 0;">照顧城市</h4>
       <ul>
-        <li><b>金幣 (◈)</b>：建造建築與升級的主要資金。</li>
-        <li><b>可用人口 (👤)</b>：許多建築需要消耗勞動力（如農田需要 1 人口）。若人口不足，請先建造<b>「住宅」</b>來增加人口上限！</li>
+        <li>每回合消耗的糧食等於<b>目前居民數</b>。糧食產量不足時會先用存糧；存糧仍不夠就會有人口流失，人口歸零時遊戲結束。</li>
+        <li>住宅等建築可提高人口上限；人口增長奇蹟也會永久提高上限。居民成長還需要足夠存糧、糧食盈餘與空餘容量。</li>
+        <li>每回合結算後會補手牌並更新商店。按手牌上的鎖定按鈕可保留卡牌；商店商品也能鎖定，避免刷新時被替換。</li>
       </ul>
 
-      <h4 style="color:var(--green); margin:8px 0;">2. 糧食與人口防衛</h4>
+      <h4 style="color:var(--green); margin:8px 0;">研發與回合</h4>
       <ul>
-        <li>每回合結束時，城市會產出糧食並消耗等同於<b>最大人口數</b>的糧食。</li>
-        <li>若糧食不足，將會消耗<b>存糧</b>；若連存糧也歸零，將會導致<b>人口流失</b>！</li>
-      </ul>
-
-      <h4 style="color:var(--green); margin:8px 0;">3. 奇蹟商店與鎖定 (📌)</h4>
-      <ul>
-        <li><b>信仰點 (⛪)</b>：可用於在商店祈求強力的主動奇蹟（如豐收祈福、人口增長）。</li>
-        <li>每回合開始時手牌與商店會重置，善用卡牌上的 <b>🔒 鎖定按鈕</b> 可以保留你想要留到下回合的卡牌或奇蹟！</li>
-      </ul>
-
-      <h4 style="color:var(--green); margin:8px 0;">4. 科技、文化與任務</h4>
-      <ul>
-        <li>累積<b>科技點 (🔬)</b> 與 <b>文化點 (🎭)</b> 可在專屬分頁研發強力的被動效果與解鎖新建築。</li>
-        <li>隨時留意<b>任務目標</b>，達成後可領取大量金幣獎勵！</li>
+        <li>科技點與文化點可用於各自的樹。研發能取得被動效果或解鎖建築；解鎖節點也會降低同一棵樹尚未解鎖節點的費用。</li>
+        <li>信仰點可在奇蹟商店購買即時或永久效果。商店上的費用與效果會直接列出。</li>
+        <li>完成任務可領取金幣。準備好後按「結束回合」結算資源、人口與分數；也可用「儲存」與「讀取」保存進度。</li>
       </ul>
     </div>
 
@@ -267,7 +264,15 @@
     </div>
 	-->
 	<div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-29</small>
+	  <strong style="color:var(--gold);"id="latestVersionTitle">vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-29</small>
+		<ul style="margin:5px 0; padding-left:20px;">
+		<li>修正一些BUG</li>
+		<li>更新了新手教學</li>
+      </ul>
+    </div>
+	
+	<div style="margin-bottom:15px;">
+	  <strong style="color:var(--gold);" >v0.15.0</strong> <small style="color:var(--muted);">- 2026-10-29</small>
 		<ul style="margin:5px 0; padding-left:20px;">
 		<li>新增"交易"系統，可在建立一座市場後解鎖。</li>
 		<li>新增一些建築與科技/文化節點。</li>
@@ -325,7 +330,7 @@
 	  
 	  
 	  <div style="margin-bottom:15px;">
-        <strong style="color:var(--gold);">v0.11</strong> <small style="color:var(--muted);"> - 2026-10-18</small>
+        <strong style="color:var(--gold);">v0.11.0</strong> <small style="color:var(--muted);"> - 2026-10-18</small>
         <ul style="margin:5px 0; padding-left:20px;">
           <li>新增「公告與新手流程教學」系統。</li>
           <li>新增「手牌與商店鎖定 (Lock)」機制。</li>

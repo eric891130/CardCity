@@ -1,5 +1,5 @@
 import { state, setState, soundEnabled, setSoundEnabled, playSound, message } from './state.js';
-import { HAND_LIMIT, LANDFORM_NAMES, BIOME_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG} from './config.js';
+import { HAND_LIMIT, LANDFORM_NAMES, BIOME_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG, updateDynamicTreeCosts} from './config.js';
 import { rand, calculate, terrainMap, availableCardPool, shuffle, drawFromDeck, makeShop, rebuildShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { renderBoard, renderHand, renderShop, renderMissions, updateAllTabNotifications, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia, } from './render.js';
@@ -12,6 +12,14 @@ import { updateAchievements, renderAchievements } from './achievements.js';
 
 const $ = id => document.getElementById(id);
 const configProblems = validateCards();
+const initialTechs = Object.keys(TECH_TREE).filter(id => TECH_TREE[id].unlocked);
+const initialCultures = Object.keys(CULTURE_TREE).filter(id => CULTURE_TREE[id].unlocked);
+$('tutorialMaxTurns').textContent = MAX_TURNS;
+const scoreCheckpoints = [];
+for(let turn = 10; turn < MAX_TURNS; turn += 10) scoreCheckpoints.push(turn);
+$('tutorialScoreCheckpoints').textContent = scoreCheckpoints.length
+  ? `第 ${scoreCheckpoints.join('、')} 回合結束時也會檢查分數門檻；`
+  : '本局沒有中途分數門檻；';
 
 // ===== 畫面更新 =====
 // render() 只更新「頂部統計列」與「目前所在的分頁」；其他分頁在切換過去時才會繪製。
@@ -460,14 +468,12 @@ function startGame(){
     return;
   }
 
-  const initialTechs = Object.keys(TECH_TREE).filter(id => TECH_TREE[id].unlocked);
-  const initialCultures = Object.keys(CULTURE_TREE).filter(id => CULTURE_TREE[id].unlocked);
   const startingBoard = terrainMap();
   const startingBuildings = startingBoard.filter(cell => cell.building);
 
   setState({
     turn:1, gold:5, faith: 10,
-    maxPopulation:0, currentPopulation:2, lostPopulation:0, storedFood:5,
+    maxPopulation:0, bonusPopulation:0, currentPopulation:2, lostPopulation:0, storedFood:5,
     bonusScore: zeroScores(),      // 建造時永久獲得的分數（onBuild 的 xxxScore）
     scores: zeroScores(),          // 目前的最終分數（calculate 會重算）
     unlockedAchievements: [],
@@ -486,6 +492,8 @@ function startGame(){
 
   for(let id in TECH_TREE){ TECH_TREE[id].unlocked = initialTechs.includes(id);}
   for(let id in CULTURE_TREE){ CULTURE_TREE[id].unlocked = initialCultures.includes(id); }
+  updateDynamicTreeCosts(TECH_TREE, initialTechs);
+  updateDynamicTreeCosts(CULTURE_TREE, initialCultures);
 
   // 任務的 baseline 取自 state.board，必須在新 state 設定完成之後才產生
   state.activeMissions = getRandomMissions(3);
@@ -592,7 +600,7 @@ $('endTurnBtn').addEventListener('click', () => {
       $('modalText').innerHTML = `<p style="margin:0 0 10px 0;">${state.failReason}</p>` + breakdownHtml;
     } else {
       $('modalTitle').textContent = '🎉 城市建設圓滿成功！';
-      $('modalText').innerHTML = `<p style="margin:0 0 10px 0;">你成功帶領城市撐過了 30 回合的挑戰！</p>` + breakdownHtml;
+      $('modalText').innerHTML = `<p style="margin:0 0 10px 0;">你成功帶領城市撐過了 ${MAX_TURNS} 回合的挑戰！</p>` + breakdownHtml;
     }
     
     $('modalBackdrop').classList.add('show');

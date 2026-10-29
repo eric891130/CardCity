@@ -1,13 +1,13 @@
 // ===== 版本（集中管理）=====
 // VERSION      遊戲顯示版本，只需改這一處（標題、畫面左上角、頁尾都會自動更新）
 // SAVE_VERSION 存檔資料格式版本；存檔結構有不相容的變動時才 +1，並到 save.js 的 migrateSave 補遷移
-export const VERSION = '0.15.0';
-export const SAVE_VERSION = 5;
+export const VERSION = '0.15.1';
+export const SAVE_VERSION = 6;
 export const SAVE_KEY = 'cardCitySave';
 export const LEGACY_SAVE_KEYS = ['cardCitySaveV9'];
 
 export const SIZE = 12;
-export const MAX_TURNS = 50;
+export const MAX_TURNS = 30;
 export const HAND_LIMIT = 10;
 
 // 地形：描述地表形狀／水系；地貌：描述地表環境／覆蓋。
@@ -108,7 +108,7 @@ export const CARDS = {
   farm: {
     name:'農田', emoji:'🌾', type:'生產',rarity: 'common', 
     cost:{ gold:2, pop:1 }, upkeep: 0, landforms:['plain','hill'], biomes:['grassland','forest','wetland'],
-	upgradesTo: ['pasture','greenhouse'],
+	upgradesTo: ['greenhouse'],
     effects:[
       { type:'points',        output:'food', amount:1 },
 	  { type:'adjacentLandform', landform:'water', output:'food', amount:1 },
@@ -118,7 +118,7 @@ export const CARDS = {
   pasture: {
     name:'牧場', emoji:'🐮', type:'生產',rarity: 'common', 
     cost:{ gold:3, pop:1 }, upkeep: 1, landforms:['plain'], biomes:['grassland','forest','wetland'],
-	upgradesTo: ['farm','vineyard'],
+	upgradesTo: ['vineyard','apiary'],
     effects:[
       { type:'points',        output:'food', amount:1 },
 	  { type:'adjacentBiome', biome:'grassland', output:'food', amount:1 },
@@ -185,7 +185,7 @@ export const CARDS = {
   house: {
     name:'住宅', emoji:'🏠', type:'人口',rarity: 'common',
     cost:{ gold:5, pop:0 }, upkeep: 1, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'],
-	upgradesTo: ['hospital','clinic'],
+    upgradesTo: ['hospital','clinic','school'],
     effects:[
       { type:'points', output:'population', amount:3 },
 	  { type:'points', output:'techPoints', amount:1 },
@@ -195,7 +195,7 @@ export const CARDS = {
   park: {
     name:'公園', emoji:'🌳', type:'環境',rarity: 'rare',
     cost:{ gold:3, pop:0 }, upkeep: 1, landforms:['plain','hill'], biomes:['grassland','forest'],	
-	upgradesTo: ['hospital','townhall'],preserveForest: true,
+    upgradesTo: ['townhall','festival','sculpture_garden'],preserveForest: true,
     effects:[
 		{ type:'finalScore',    output:'buildingScore',     amount:2 },
 		{ type:'adjacentBuilding', target:'park', output:'culturePoints', amount:1 },
@@ -281,7 +281,7 @@ export const CARDS = {
   academy: {
     name:'學院', emoji:'🎓', type:'科技',rarity: 'epic',
     cost:{ gold:8, pop:2 }, upkeep: 8, landforms:['plain','hill','mountain'], biomes:['grassland','forest','desert','snow','wetland'],
-    upgradesTo: ['observatory'],
+    upgradesTo: ['observatory','university'],
 	effects:[
 		{ type:'points', output:'techPoints',    amount:3 },
 		{ type:'radiusBuilding', radius:2, target:'house', output:'techPoints', amount:1 },
@@ -451,7 +451,10 @@ export const CARDS = {
   courthouse: { name:'法院', emoji:'⚖️', type:'行政', rarity:'epic', cost:{gold:9,pop:1}, upkeep:4, landforms:['plain'], biomes:['grassland','forest','desert'], upgradesTo:[], effects:[{type:'points',output:'gold',amount:3},{type:'uniqueTypes',output:'culturePoints',amount:1},{type:'finalScore',output:'buildingScore',amount:2}] },
   sculpture_garden: { name:'雕塑公園', emoji:'🗿', type:'文化', rarity:'epic', cost:{gold:8,pop:0}, upkeep:2, landforms:['plain','hill'], biomes:['grassland','forest'], preserveForest:true, upgradesTo:[], effects:[{type:'points',output:'culturePoints',amount:2},{type:'adjacentBuilding',target:['park','theater'],output:'buildingScore',amount:2}] },
   lighthouse: { name:'燈塔', emoji:'🗼', type:'設施', rarity:'epic', cost:{gold:8,pop:1}, upkeep:3, landforms:['water'], biomes:['water'], upgradesTo:[], effects:[{type:'points',output:'gold',amount:2},{type:'adjacentRiver',output:'techPoints',amount:1},{type:'finalScore',output:'buildingScore',amount:2}] },
-  bank: { name:'銀行', emoji:'🏦', type:'商業', rarity:'legendary', cost:{gold:12,pop:2}, upkeep:5, landforms:['plain'], biomes:['grassland','forest','desert'], upgradesTo:[], effects:[{type:'points',output:'gold',amount:5},{type:'adjacentBuilding',target:['market','mint','guild_hall'],output:'gold',amount:2},{type:'finalScore',output:'buildingScore',amount:4}] }
+  bank: { name:'銀行', emoji:'🏦', type:'商業', rarity:'legendary', cost:{gold:12,pop:2}, upkeep:5, landforms:['plain'], biomes:['grassland','forest','desert'], upgradesTo:[], effects:[{type:'points',output:'gold',amount:5},{type:'adjacentBuilding',target:['market','mint','guild_hall'],output:'gold',amount:2},{type:'finalScore',output:'buildingScore',amount:4}] },
+  quarry: { name:'採石場', emoji:'🪨', type:'工業', rarity:'common', cost:{gold:4,pop:1}, upkeep:1, landforms:['hill','mountain'], biomes:['grassland','forest','desert','snow'], upgradesTo:['stoneworks'], effects:[{type:'points',output:'gold',amount:2},{type:'adjacentLandform',landform:'mountain',output:'gold',amount:1}] },
+  stoneworks: { name:'石材工坊', emoji:'🧱', type:'工業', rarity:'rare', cost:{gold:7,pop:1}, upkeep:2, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'], upgradesTo:[], effects:[{type:'points',output:'gold',amount:4},{type:'adjacentBuilding',target:['quarry','mine'],output:'gold',amount:1},{type:'finalScore',output:'buildingScore',amount:2}] },
+  school: { name:'學校', emoji:'🏫', type:'教育', rarity:'rare', cost:{gold:7,pop:1}, upkeep:3, landforms:['plain','hill'], biomes:['grassland','forest','desert','snow','wetland'], upgradesTo:['university'], effects:[{type:'points',output:'techPoints',amount:2},{type:'radiusBuilding',radius:2,target:'house',output:'culturePoints',amount:1}] }
   
 };
 
@@ -540,7 +543,7 @@ export const TECH_TREE = {
   },
   iron_mining: {
     name: '冶鐵術', icon: '⚒️', cost: 12, requires: ['irontool'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '掌握熔煉與礦石加工，讓礦場能進一步發展為鐵礦場。',
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'iron_mine', mode:'upgradeOnly' },
@@ -549,7 +552,7 @@ export const TECH_TREE = {
   },
   urban_planning: {
     name: '都市規劃', icon: '📐', cost: 12, requires: ['engineering'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '以道路、用地與公共設施的整體規劃支援更密集的商業聚落。',
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'business_center', mode:'upgradeOnly' },
@@ -560,7 +563,7 @@ export const TECH_TREE = {
   },
   engineering: {
     name: '工程學', icon: '🛠️', cost: 16, requires: ['iron_mining'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '運用機械與結構知識改善水力設備，為工業化生產奠定基礎。',
     unlocked: false,
     effects: [
 	  { type:'unlockBuilding', target:'windmill' , mode:'addPool' },
@@ -569,7 +572,7 @@ export const TECH_TREE = {
   },
   mechanization: {
     name: '機械化生產', icon: '⚙️', cost: 20, requires: ['engineering'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '以機械動力取代部分人力，提升礦業與工廠的生產效率。',
     unlocked: false,
     effects: [
 	  { type:'unlockBuilding', target:'factory', mode:'upgradeOnly' },
@@ -696,6 +699,11 @@ export const TECH_TREE = {
       { type:'unlockBuilding', target:'bank', mode:'addPool' },
       { type:'buildingBonus', target:'mint', output:'gold', amount:1 }
     ]
+  },
+  masonry: {
+    name: '石工技術', icon: '🧱', cost: 20, requires: ['engineering'],
+    desc: '以採石與砌築技術建造耐久的石材工坊。', unlocked: false,
+    effects: [{ type:'unlockBuilding', target:'stoneworks', mode:'upgradeOnly' }, { type:'unlockBuilding', target:'quarry', mode:'addPool' }]
   }
   
 };
@@ -711,7 +719,7 @@ export const CULTURE_TREE = {
   },
   settle: {
     name: '定居', icon: '🏘️', cost: 5, requires: ['tradition'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '從季節性營地轉向長期聚落，形成穩定的住宅與社區。',
     unlocked: false,
     effects: [
         { type:'unlockBuilding', target:'house' , mode:'addPool' },
@@ -719,7 +727,7 @@ export const CULTURE_TREE = {
   },
   trading: {
     name: '貿易', icon: '🪙', cost: 8, requires: ['settle'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '以物易物與定期市集連結聚落，促進專業分工。',
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'market' , mode:'addPool' },
@@ -727,7 +735,7 @@ export const CULTURE_TREE = {
   },
   Belief: {
     name: '信仰', icon: '🙏', cost: 8, requires: ['settle'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '共同儀式與信念凝聚社群，並形成固定的祭祀場所。',
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'shrine' , mode:'addPool' },
@@ -735,7 +743,7 @@ export const CULTURE_TREE = {
   },
   arts: {
     name: '藝術', icon: '🎨', cost: 15, requires: ['settle'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '發展表演、工藝與記錄傳統，豐富城市的文化生活。',
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:'library', output:'culturePoints', amount:1 },
@@ -744,7 +752,7 @@ export const CULTURE_TREE = {
   },
   religion: {
     name: '宗教', icon: '⛪', cost: 20, requires: ['Belief'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '儀式制度化後，信仰中心逐漸發展為規模更大的神殿。',
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'Temple' , mode:'upgradeOnly' },
@@ -752,7 +760,7 @@ export const CULTURE_TREE = {
   },
   philosophy: {
     name: '哲學思想', icon: '🏛️', cost: 20, requires: ['arts'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '支持思想交流與知識辯論，提升學術與信仰機構的文化影響。',
     unlocked: false,
     effects: [
       { type:'buildingBonus', target:['library','shrine'], output:'culturePoints', amount:2 },
@@ -761,7 +769,7 @@ export const CULTURE_TREE = {
   },  
   public_gardens: {
     name: '公共事務', icon: '🌷', cost: 20, requires: ['settle'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '規劃公共綠地與共同空間，讓居民有交流和休憩的場所。',
     unlocked: false,
     effects: [
 	  { type:'unlockBuilding', target:'park' , mode:'addPool' },
@@ -772,7 +780,7 @@ export const CULTURE_TREE = {
   },
   civic_pride: {
     name: '城市認同', icon: '🏙️', cost: 20, requires: ['public_gardens'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '共同的城市認同促進公共建設、行政組織與大型集會。',
     unlocked: false,
     effects: [
 	  { type:'unlockBuilding', target:'festival', mode:'upgradeOnly' },
@@ -782,7 +790,7 @@ export const CULTURE_TREE = {
   },
   Medical: {
     name: '醫療保健', icon: '🩺', cost: 18, requires: ['religion'],
-    desc: '這裡之後會填充描述---作者',
+    desc: '累積醫療知識與照護制度，讓住宅或公共綠地可發展為醫療設施。',
     unlocked: false,
     effects: [
 	  { type:'unlockBuilding', target:'hospital', mode:'upgradeOnly' },
@@ -882,6 +890,11 @@ export const CULTURE_TREE = {
     name: '商業信譽', icon: '🤝', cost: 24, requires: ['guilds'],
     desc: '以信用與互信支持金融機構，提升銀行與鑄幣所的文化產出。', unlocked: false,
     effects: [{ type:'buildingBonus', target:['bank','mint'], output:'culturePoints', amount:1 }]
+  },
+  public_education: {
+    name: '公共教育', icon: '📖', cost: 22, requires: ['arts'],
+    desc: '由社群支持基礎教育，建立學校並培養更多識字與研究人才。', unlocked: false,
+    effects: [{ type:'unlockBuilding', target:'school', mode:'addPool' }, { type:'buildingBonus', target:'library', output:'techPoints', amount:1 }]
   }
   
   
@@ -914,7 +927,7 @@ export function updateDynamicTreeCosts(tree, unlockedIds = []) {
   const discountPerNode = 0.02; // 每解鎖 1 個科技/文化之折扣
   const maxDiscount = 0.60;     // 最大折扣上限
   
-  let totalDiscountRate = Math.min(maxDiscount, (unlockedCount - 1) * discountPerNode);
+  let totalDiscountRate = Math.max(0, Math.min(maxDiscount, (unlockedCount - 1) * discountPerNode));
   // 套用公式與動態折扣到每個節點
   for (const id in tree) {
     const lvl = getLevel(id);
@@ -938,7 +951,7 @@ updateDynamicTreeCosts(CULTURE_TREE, initialCultures);
 export const SHOP_ITEMS = [
   { id: 'blessing', name: '豐收祈福', emoji: '🍞', cost: 15, desc: '立即獲得 8 點存糧與 10 金幣。', effect: (state) => { state.storedFood += 8; state.gold += 10; } },
   { id: 'inspiration', name: '靈感湧現', emoji: '🔬', cost: 20, desc: '立即獲得 15 點科技點與 15 點文化點。', effect: (state) => { state.techPoints += 15; state.culturePoints += 15; } },
-  { id: 'growth', name: '人口增長', emoji: '👤', cost: 25, desc: '永久增加 2 點人口上限。', effect: (state) => { state.maxPopulation += 2; } },
+  { id: 'growth', name: '人口增長', emoji: '👤', cost: 25, desc: '永久增加 2 點人口上限。', effect: (state) => { state.bonusPopulation = (Number(state.bonusPopulation) || 0) + 2; } },
   { id: 'golden_age', name: '黃金盛世', emoji: '✨', cost: 30, desc: '立即獲得 30 金幣。', effect: (state) => { state.gold += 30; } }
 ];
 
