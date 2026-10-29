@@ -8,7 +8,6 @@ export const SHORTCUT_LIST = [
   { keys: ['E'], desc: '結束回合', scope: '城市' },
   { keys: ['D'], desc: '抽 1 張牌（3 ◈）', scope: '城市' },
   { keys: ['R'], desc: '刷新商店（2 ◈）', scope: '城市' },
-  { keys: ['U'], desc: '升級已選取的建築', scope: '城市' },
   { keys: ['X'], desc: '拆除已選取的建築（不退款，需連按兩次確認）', scope: '城市' },
   { keys: ['B', 'T', 'C', 'M'], desc: '切換分頁：城市 / 科技 / 文化 / 任務' },
   { keys: ['Esc'], desc: '依序：關閉視窗 → 取消拆除確認 → 取消選牌 → 取消選取格子' },
@@ -40,7 +39,6 @@ function dispatch(key, h) {
     case 'e': h.endTurn(); return true;
     case 'd': h.draw(); return true;
     case 'r': h.refreshShop(); return true;
-    case 'u': h.upgrade(); return true;
     case 'x': h.demolish(); return true;
     case 'b': h.tab('city'); return true;
     case 't': h.tab('tech'); return true;

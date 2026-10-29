@@ -55,7 +55,12 @@ export function renderBoard(onCellClick, onCellPointer, onCellLeave){
     let terrainIcon={plain:'·',hill:'⌁',water:'≈',mountain:'▲'}[c.landform] || '·';
     let biomeIcon={grassland:'🌱',forest:'🌲',desert:'🏜️',snow:'❄️',water:'🌊',wetland:'🌿'}[c.biome] || '';
     const riverMarkup=(c.riverEdges||[]).map(dir=>`<span class="river-edge river-${dir.toLowerCase()}" aria-hidden="true"></span>`).join('');
-    b.innerHTML=`${riverMarkup}<span class="terrain" title="${LANDFORM_NAMES[c.landform]}">${terrainIcon}</span><span class="biome" title="${BIOME_NAMES[c.biome]}">${biomeIcon}</span>${c.building?`<span class="emoji">${CARDS[c.building].emoji}</span><span class="bname">${CARDS[c.building].name}</span><span class="bonus">${formatBonus(c.stats)}</span>`:''}`;
+    const buildingLevel = Math.max(1, Math.min(3, Math.floor(c.level || 1)));
+    const buildingEmoji = c.building ? CARDS[c.building].emoji : '';
+    const buildingIcons = buildingLevel === 1
+      ? `<span class="emoji">${buildingEmoji}</span>`
+      : `<span class="building-level-icons level-${buildingLevel}" aria-hidden="true">${Array.from({length:buildingLevel}, () => `<span class="emoji">${buildingEmoji}</span>`).join('')}</span>`;
+    b.innerHTML=`${riverMarkup}<span class="terrain" title="${LANDFORM_NAMES[c.landform]}">${terrainIcon}</span><span class="biome" title="${BIOME_NAMES[c.biome]}">${biomeIcon}</span>${c.building?`${buildingIcons}<span class="bname">${CARDS[c.building].name}</span><span class="bonus">${formatBonus(c.stats)}</span>`:''}`;
 	
     b.addEventListener('click',()=>{ if(onCellClick) onCellClick(c); });
     b.addEventListener('mouseenter',(ev)=>{ if(onCellPointer) onCellPointer(c, ev); });
@@ -87,7 +92,9 @@ const tipRow = (cls, icon, label, v) => `<div class="tip-row ${cls}"><span>${ico
 export function buildPlacementTip(card, cell, pv){
   const d = CARDS[card.type];
   let html = `<div class="tip-title">${d.emoji} ${d.name}<span class="tip-sub">${LANDFORM_NAMES[cell.landform]}・${BIOME_NAMES[cell.biome]} (${cell.x}, ${cell.y})</span></div>`;
-  html += `<div class="tip-cost">費用 ${d.cost.gold} ◈ · ${d.cost.pop} 👤</div>`;
+  html += pv.upgrade
+    ? `<div class="tip-cost">升級至 Lv.${pv.upgrade.nextLevel}：卡牌 ${pv.upgrade.cardCost} ◈ + 升級 ${pv.upgrade.extraCost} ◈（共 ${pv.upgrade.totalCost} ◈）· 額外 ${d.cost.pop} 👤</div>`
+    : `<div class="tip-cost">建造費用 ${d.cost.gold} ◈ · ${d.cost.pop} 👤</div>`;
   if(pv.reason) html += `<div class="tip-warn">⚠ ${pv.reason}</div>`;
   if(pv.delta){
     const section = (title, rowDefs, emptyText) => {
@@ -104,7 +111,7 @@ export function buildPlacementTip(card, cell, pv){
       const o = OUTPUTS[id];
       return tipRow('pos', o.icon, o.group === 'score' ? `${o.label}（最終）` : o.label, signed(pv.once[id]));
     });
-    html += `<div class="tip-head">建造時一次性獲得</div>` + rows.join('');
+    html += `<div class="tip-head">${pv.upgrade ? '升級時一次性獲得' : '建造時一次性獲得'}</div>` + rows.join('');
   }
   return html;
 }
@@ -378,7 +385,11 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
       </div>
     `;
 	
-    // 🔽 依據是否有填寫升級資料來動態渲染
+    html += lvl < 3
+      ? `<div style="margin-top:8px; font-size:11px; color:var(--muted); text-align:center;">打出同類建築卡並點擊此格，可升級至 Lv.${lvl + 1}。</div>${hasUpgrade ? '<div style="margin-top:4px; font-size:10px; color:var(--muted); text-align:center;">達 Lv.3 後可使用下方改造路線。</div>' : ''}`
+      : `<div style="margin-top:8px; font-size:11px; color:var(--muted); text-align:center;">已達最高等級 Lv.3。</div>`;
+
+    // 改造路線保留原有目標，但必須先達到 Lv.3。
     if(hasUpgrade) {
     let upgradeOptions = Array.isArray(d.upgradesTo) ? d.upgradesTo : [d.upgradesTo];
     
@@ -388,14 +399,15 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
 
       let isUnlocked = isBuildingUnlocked(targetId); // 檢查是否已解鎖
       let upgradeCost = d.upgradeCost ? d.upgradeCost.gold : targetCard.cost.gold;
-      let canUpgrade = isUnlocked && state.gold >= upgradeCost && !state.gameOver;
+      let extraWorkers = Math.max(0, (targetCard.cost.pop || 0) - (d.cost.pop || 0) * lvl);
+      let canUpgrade = lvl >= 3 && isUnlocked && state.gold >= upgradeCost && state.population >= extraWorkers && !state.gameOver;
 
-      let btnLabel = !isUnlocked ? `🔒 未解鎖 ${targetCard.name}` : `改造為 ${targetCard.name}`;
+      let btnLabel = lvl < 3 ? '需達 Lv.3' : !isUnlocked ? `🔒 未解鎖 ${targetCard.name}` : `改造為 ${targetCard.name}`;
 
       html += `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
           <span style="font-size:11px; color:${isUnlocked ? 'var(--gold)' : 'var(--muted)'};">
-            升級目標：${targetCard.emoji} ${targetCard.name} (${upgradeCost} ◈) ${!isUnlocked ? '<span style="color:var(--red)">(未解鎖)</span>' : ''}
+            改造目標：${targetCard.emoji} ${targetCard.name} (${upgradeCost} ◈${extraWorkers ? ` · 額外 ${extraWorkers} 👤` : ''}) ${lvl < 3 ? '<span style="color:var(--muted)">(需先升至 Lv.3)</span>' : !isUnlocked ? '<span style="color:var(--red)">(未解鎖)</span>' : ''}
           </span>
           <button class="primary upgrade-choice-btn" data-target="${targetId}" style="padding:5px 10px; font-size:11px;" ${!canUpgrade ? 'disabled' : ''}>
             ${btnLabel}
@@ -405,7 +417,7 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
     });
   } else {
       html += `
-        <div style="margin-top:8px; font-size:11px; color:var(--muted); text-align:center;">此建築已達最終形態，無法繼續升級。</div>
+        <div style="margin-top:8px; font-size:11px; color:var(--muted); text-align:center;">已達最高等級 Lv.3；此建築沒有改造路線。</div>
       `;
     }
 

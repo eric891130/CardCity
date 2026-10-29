@@ -31,12 +31,12 @@ export function buildingsWithin(cell, radius){
 
 export function countBuilding(type){
   if(!state || !state.board) return 0;
-  return state.board.filter(c => c.building === type).length;
+  return state.board.reduce((total, cell) => total + (cell.building === type ? (cell.level || 1) : 0), 0);
 }
 // 全城符合 target 的建築總數（target 可為 id / 陣列 / 'any'）
-export function countMatching(target){
+export function countMatching(target, targetType){
   if(!state || !state.board) return 0;
-  return state.board.filter(c => matchesTarget(c.building, target)).length;
+  return state.board.filter(c => matchesTarget(c.building, target, targetType)).length;
 }
 export function uniqueBuildingTypes(){
   if(!state || !state.board) return 0;

@@ -42,7 +42,9 @@
   <button class="tab-btn" data-tab="tech">🔬 科技</button>
   <button class="tab-btn" data-tab="culture">🏛️ 文化</button>
   <button class="tab-btn" data-tab="missions">📜 任務</button>
-  <button class="tab-btn" data-tab="encyclopedia" style="margin-left: auto;">📖 卡牌圖鑑</button>
+  <button class="tab-btn" data-tab="trade">🔒 交易</button>
+  <button class="tab-btn" data-tab="achievements" style="margin-left: auto;">🏆 本局成就</button>
+  <button class="tab-btn" data-tab="encyclopedia">📖 卡牌圖鑑</button>
 </nav>
 
 <div id="tab-city" class="tab-content active">
@@ -57,10 +59,10 @@
     <div class="right-col">
 	  <section class="panel wide">
         <div class="panel-head">
-          <div><h2>建築資訊</h2><p>點擊棋盤上的建築以檢視、升級或拆除。</p></div>
+          <div><h2>建築資訊</h2><p>打出同類建築卡至原格升級；達 Lv.3 後可選擇改造或拆除。</p></div>
         </div>
         <div class="section-body" id="buildingInfoContent" style="font-size:12px; color:var(--muted);">
-          尚未選取建築。點擊棋盤上的建築物來查看等級、產出，並進行升級或拆除。
+          尚未選取建築。打出同類建築卡至原格可升級；點擊建築可查看等級、產出，並在 Lv.3 選擇改造或拆除。
         </div>
 		</section>	
       <section class="panel wide">
@@ -83,6 +85,15 @@
         </div>
       </section>
     </div>
+  </main>
+</div>
+
+<div id="tab-trade" class="tab-content">
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 1000px;">
+    <section class="panel">
+      <div class="panel-head"><div><h2>城市交易所</h2><p id="tradeTierHint">建造市場以開啟交易。</p></div><strong id="tradeTierLabel">🔒 尚未開放</strong></div>
+      <div class="section-body" id="tradeContent"></div>
+    </section>
   </main>
 </div>
 
@@ -131,6 +142,18 @@
         </div>
       </div>
       <div class="section-body" id="encyclopediaContainer"></div>
+    </section>
+  </main>
+</div>
+
+<div id="tab-achievements" class="tab-content">
+  <main class="layout" style="grid-template-columns: 1fr; max-width: 1000px;">
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>本局成就</h2><p>達成有趣的城市目標即可自動解鎖，獲得本局積分。</p></div>
+        <strong id="achievementScoreLabel" style="color:var(--gold)">🏆 0 分</strong>
+      </div>
+      <div class="section-body" id="achievementsContainer"></div>
     </section>
   </main>
 </div>
@@ -242,9 +265,18 @@
 		<li></li>
       </ul>
     </div>
-	--> 
+	-->
 	<div style="margin-bottom:15px;">
-	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-28</small>
+	  <strong style="color:var(--gold);" id="latestVersionTitle" >vVERSION (目前版本)</strong> <small style="color:var(--muted);">- 2026-10-29</small>
+		<ul style="margin:5px 0; padding-left:20px;">
+		<li>新增"交易"系統，可在建立一座市場後解鎖。</li>
+		<li>新增一些建築與科技/文化節點。</li>
+		<li>新增建築等級升級系統</li>
+      </ul>
+    </div>
+	
+	<div style="margin-bottom:15px;">
+	  <strong style="color:var(--gold);" >v0.14.1</strong> <small style="color:var(--muted);">- 2026-10-28</small>
 		<ul style="margin:5px 0; padding-left:20px;">
 		<li>修改了人口增長的機制。</li>
 		<li>新增一些科技/文化節點。</li>

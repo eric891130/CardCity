@@ -1,7 +1,7 @@
 // 科技樹 / 文化樹的共用邏輯：兩棵樹只有「資料來源、點數種類、文案」不同，
 // 繪製、節點視窗、解鎖流程全部共用同一份程式碼。
 import { state, message, playSound } from './state.js';
-import { TECH_TREE, CULTURE_TREE } from './config.js';
+import { updateDynamicTreeCosts,TECH_TREE, CULTURE_TREE } from './config.js';
 import { availableCardPool} from './game.js';
 import { describeTreeNode } from './effects.js';
 
@@ -246,6 +246,9 @@ export function unlockSelectedNode(kind, onDone) {
       }
     }
   });
+
+  updateDynamicTreeCosts(TECH_TREE, state.unlockedTechs);
+  updateDynamicTreeCosts(CULTURE_TREE, state.unlockedCultures);
 
   playSound('win');
   message(`${meta.successText}：${node.name}！`, false, true);

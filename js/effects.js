@@ -14,6 +14,10 @@
 import { CARDS, OUTPUTS, LANDFORM_NAMES, BIOME_NAMES, TECH_TREE, CULTURE_TREE } from './config.js';
 import { neighbors, buildingsWithin, countMatching, uniqueBuildingTypes, matchesTarget, targetList, riverEdgeCount } from './board.js';
 
+const buildingInstances = cells => cells.reduce((total, cell) => total + (cell.building ? (cell.level || 1) : 0), 0);
+const matchingInstances = (cells, target, targetType) => cells.reduce((total, cell) =>
+  total + (matchesTarget(cell.building, target, targetType) ? (cell.level || 1) : 0), 0);
+
 // ---------- 建築效果 ----------
 // needs     除了 type/output/amount 以外「必填」的欄位
 // optional  「選填」的欄位
@@ -42,7 +46,7 @@ export const EFFECT_TYPES = {
   },
   adjacentBuilding: {
     title: '相鄰建築加成', phase: 'own', needs: [], optional: ['target', 'targetType', 'cap'], outputs: ANY_OUTPUT, counted: true,
-    count: (e, cell) => neighbors(cell).filter(n => matchesTarget(n.building, e.target, e.targetType)).length,
+    count: (e, cell) => matchingInstances(neighbors(cell), e.target, e.targetType),
     cond: e => `每座相鄰的${names(e.target, e.targetType)}${capText(e, '座')}`
   },
   adjacentLandform: {
@@ -62,12 +66,12 @@ export const EFFECT_TYPES = {
   },
   radiusBuilding: {
     title: '範圍內建築加成', phase: 'own', needs: ['radius'], optional: ['target', 'targetType', 'cap'], outputs: ANY_OUTPUT, counted: true,
-    count: (e, cell) => buildingsWithin(cell, e.radius).filter(n => matchesTarget(n.building, e.target, e.targetType)).length,
+    count: (e, cell) => matchingInstances(buildingsWithin(cell, e.radius), e.target, e.targetType),
     cond: e => `${e.radius} 格內每座${names(e.target, e.targetType)}${capText(e, '座')}`
   },
   buildingCount: {
     title: '建築數量門檻', phase: 'own', needs: ['min'], optional: ['target', 'targetType'], outputs: ANY_OUTPUT,
-    count: e => countMatching(e.target, e.targetType) >= e.min ? 1 : 0,
+    count: e => buildingInstances(countMatching(e.target, e.targetType)) >= e.min ? 1 : 0,
     cond: e => `全城至少有 ${e.min} 座${names(e.target, e.targetType)}時`
   },
   uniqueTypes: {
@@ -82,7 +86,7 @@ export const EFFECT_TYPES = {
   onBuild: {
     title: '建造時一次性獲得', phase: 'build', needs: [], optional: ['target', 'targetType', 'cap'], outputs: ['resource', 'score'], counted: true,
     // 未指定 target / targetType 時固定觸發一次；有指定時，依相鄰符合條件的建築數量計算。
-    count: (e, cell) => e.target === undefined && e.targetType === undefined ? 1 : neighbors(cell).filter(n => matchesTarget(n.building, e.target, e.targetType)).length,
+    count: (e, cell) => e.target === undefined && e.targetType === undefined ? 1 : matchingInstances(neighbors(cell), e.target, e.targetType),
     cond: e => '建造時' + (e.target === undefined && e.targetType === undefined ? '' : `每座相鄰的${names(e.target, e.targetType)}${capText(e, '座')}`)
   }
 };
@@ -90,7 +94,7 @@ export const EFFECT_TYPES = {
 // ---------- 科技 / 文化樹的效果 ----------
 export const TREE_EFFECT_TYPES = {
   unlockBuilding: { title: '解鎖建築', needs: ['target'], optional: ['mode', 'replaces'] },
-  buildingBonus:  { title: '指定建築類型的固定加成（不隨等級成長）', needs: ['output', 'amount'], optional: ['target', 'targetType'] },
+  buildingBonus:  { title: '指定建築類型的固定加成（依建築等級倍增）', needs: ['output', 'amount'], optional: ['target', 'targetType'] },
   effectBoost:    { title: '強化指定建築或類型的某種效果', needs: ['effectType', 'amount'], optional: ['target', 'targetType'] }
 };
 
@@ -167,8 +171,8 @@ export function emptyStats(){
   for(const id in OUTPUTS) s[id] = 0;
   return s;
 }
-// amount 隨建築等級倍增；容量類（人口上限）不隨等級成長
-export const levelFactor = (output, level) => (OUTPUTS[output] && OUTPUTS[output].group === 'capacity') ? 1 : level;
+// 每升一級等同增加一座同類建築，因此所有持續效果（包含容量）都隨等級倍增。
+export const levelFactor = (_output, level) => level;
 
 // 算出整張棋盤每一格的產出，結果寫入 cell.stats（key 是 OUTPUTS 的 id）
 export function computeCellStats(board){
@@ -198,13 +202,13 @@ export function computeCellStats(board){
     for(const e of CARDS[c.building].effects || []){
       if(!EFFECT_TYPES[e.type] || EFFECT_TYPES[e.type].phase !== 'aura') continue;
       const amount = (e.amount + boostFor(c.building, e.type)) * levelFactor(e.output, lvl);
-      for(const n of neighbors(c)) if(matchesTarget(n.building, e.target, e.targetType)) n.stats[e.output] += amount;
+      for(const n of neighbors(c)) if(matchesTarget(n.building, e.target, e.targetType)) n.stats[e.output] += amount * (n.level || 1);
     }
   }
   // 第 3 輪：科技 / 文化樹的 buildingBonus（固定值）
   for(const c of board){
     if(!c.building) continue;
-    for(const b of bonuses) if(matchesTarget(c.building, b.target, b.targetType)) c.stats[b.output] += b.amount;
+    for(const b of bonuses) if(matchesTarget(c.building, b.target, b.targetType)) c.stats[b.output] += b.amount * (c.level || 1);
   }
 }
 

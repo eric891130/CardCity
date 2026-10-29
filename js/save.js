@@ -3,7 +3,7 @@
 //   version     → 存檔「資料格式」版本（SAVE_VERSION），格式有不相容變動時才加 1，並在 migrateSave 補一段遷移
 //   gameVersion → 遊戲顯示版本（VERSION），僅供除錯參考
 import { state, setState } from './state.js';
-import { TECH_TREE, CULTURE_TREE, SHOP_ITEMS, SIZE, VERSION, SAVE_VERSION, SAVE_KEY, LEGACY_SAVE_KEYS } from './config.js';
+import { TECH_TREE, CULTURE_TREE, SHOP_ITEMS, SIZE, VERSION, SAVE_VERSION, SAVE_KEY, LEGACY_SAVE_KEYS, CARDS, LANDFORM_NAMES, BIOME_NAMES } from './config.js';
 import { getRandomMissions, generateRiverEdges } from './game.js';
 
 export function writeSave() {
@@ -15,32 +15,72 @@ export function writeSave() {
 
 // 回傳 { data } 或 { error }，不會丟出例外
 export function readSave() {
-  let raw = localStorage.getItem(SAVE_KEY);
-  if(!raw) {
-    // 找不到新 key → 嘗試舊版 key（舊存檔沒有 version 欄位，視為 version 0）
-    for(const key of LEGACY_SAVE_KEYS) {
-      raw = localStorage.getItem(key);
-      if(raw) break;
+  try {
+    let raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) {
+      // 找不到新 key → 嘗試舊版 key（舊存檔沒有 version 欄位，視為 version 0）
+      for(const key of LEGACY_SAVE_KEYS) {
+        raw = localStorage.getItem(key);
+        if(raw) break;
+      }
     }
-  }
-  if(!raw) return { error: '找不到任何存檔。' };
+    if(!raw) return { error: '找不到任何存檔。' };
 
-  let data;
-  try { data = JSON.parse(raw); }
-  catch(e) { return { error: '存檔已損毀，無法讀取。' }; }
+    let data;
+    try { data = JSON.parse(raw); }
+    catch(e) { return { error: '存檔已損毀，無法讀取。' }; }
 
-  if(!data || typeof data !== 'object' || !data.state || !Array.isArray(data.state.board) || data.state.board.length !== SIZE * SIZE) {
-    return { error: '存檔格式不正確，無法讀取。' };
+    if(!data || typeof data !== 'object' || !data.state || !Array.isArray(data.state.board) || data.state.board.length !== SIZE * SIZE) {
+      return { error: '存檔格式不正確，無法讀取。' };
+    }
+    if((data.version || 0) > SAVE_VERSION) {
+      return { error: '此存檔來自較新的遊戲版本，無法讀取。' };
+    }
+    data = migrateSave(data);
+    const validationError = validateSaveData(data);
+    if(validationError) return { error: validationError };
+    return { data };
+  } catch(e) {
+    return { error: '讀取存檔失敗，資料可能已損毀或瀏覽器儲存空間無法使用。' };
   }
-  if((data.version || 0) > SAVE_VERSION) {
-    return { error: '此存檔來自較新的遊戲版本，無法讀取。' };
+}
+
+function validateSaveData(data) {
+  const s = data.state;
+  const requiredNumbers = ['turn', 'gold', 'faith', 'currentPopulation', 'storedFood'];
+  if(requiredNumbers.some(key => !Number.isFinite(s[key]))) return '存檔格式不正確：資源或回合資料缺失。';
+  if(!s.board.every((cell, index) => {
+    const x = index % SIZE, y = Math.floor(index / SIZE);
+    return cell && typeof cell === 'object' && cell.x === x && cell.y === y &&
+      Object.hasOwn(LANDFORM_NAMES, cell.landform) && Object.hasOwn(BIOME_NAMES, cell.biome) &&
+      (cell.building == null || Object.hasOwn(CARDS, cell.building)) &&
+      (cell.riverEdges === undefined || (Array.isArray(cell.riverEdges) && cell.riverEdges.every(dir => ['N', 'E', 'S', 'W'].includes(dir))));
+  })) return '存檔格式不正確：棋盤資料包含無效地形或建築。';
+  if(s.hand !== undefined && (!Array.isArray(s.hand) || s.hand.some(card => !card || !Object.hasOwn(CARDS, card.type)))) {
+    return '存檔格式不正確：手牌資料無效。';
   }
-  return { data: migrateSave(data) };
+  if(s.shop !== undefined && (!Array.isArray(s.shop) || s.shop.some(item => !item || !SHOP_ITEMS.some(shopItem => shopItem.id === item.id)))) {
+    return '存檔格式不正確：商店資料無效。';
+  }
+  return null;
 }
 
 function migrateSave(data) {
   const s = data.state;
   const v = data.version || 0;
+
+  // 成就資料為新增的可選狀態，舊存檔讀取時以尚未解鎖處理。
+  if(!Array.isArray(s.unlockedAchievements)) s.unlockedAchievements = [];
+  if(!Number.isFinite(s.achievementScore)) s.achievementScore = 0;
+  if(!Number.isFinite(s.achievementStartingBuildingCount)) {
+    const startingBuildings = (s.board || []).filter(cell => cell.building);
+    s.achievementStartingBuildingCount = startingBuildings.length;
+    s.achievementStartingBuildingTypes = [...new Set(startingBuildings.map(cell => cell.building))];
+  }
+  if(!Array.isArray(s.achievementStartingBuildingTypes)) s.achievementStartingBuildingTypes = [];
+  for(const cell of s.board || []){
+    cell.level = cell.building ? Math.max(1, Math.min(3, Math.floor(Number(cell.level) || 1))) : 1;
+  }
 
   if(v < 1) {
     // v0 → v1

@@ -8,8 +8,10 @@ import { writeSave, readSave, applySave } from './save.js';
 import { initKeyboard, SHORTCUT_LIST } from './keys.js';
 import { validateCards } from './validate.js';
 import { describeCard } from './effects.js';
+import { updateAchievements, renderAchievements } from './achievements.js';
 
 const $ = id => document.getElementById(id);
+const configProblems = validateCards();
 
 // ===== 畫面更新 =====
 // render() 只更新「頂部統計列」與「目前所在的分頁」；其他分頁在切換過去時才會繪製。
@@ -21,6 +23,12 @@ let pendingDemolish = null;   // {x, y}：已按過一次「拆除」，等待�
 
 function render(){
   renderEpoch++;
+  const newlyUnlocked = updateAchievements();
+  if(newlyUnlocked.length) document.querySelector('.tab-btn[data-tab="achievements"]')?.classList.add('has-reward');
+  for(const achievement of newlyUnlocked){
+    addLog(`🏆 解鎖成就「${achievement.title}」，獲得 ${achievement.points} 點成就得分！`);
+    playSound('win');
+  }
   calculate();
   renderStats();
   updateAllTabNotifications();
@@ -30,13 +38,20 @@ function render(){
     case 'tech':    renderTree('tech', id => openTreeModal('tech', id)); break;
     case 'culture': renderTree('culture', id => openTreeModal('culture', id)); break;
     case 'missions': renderMissions(claimMission); break;
+	case 'trade': renderTradeTab(); break;
 	case 'encyclopedia': renderEncyclopedia(); break;
+	case 'achievements': renderAchievements(); break;
   }
 }
 
 // 頂部統計列：每次 render 都更新（內容很小）。科技點 / 文化點也在這裡更新，
 // 因此即使科技樹分頁沒有被繪製，頂部數字也一定是最新的。
 function renderStats(){
+  const tradeBtn = document.querySelector('.tab-btn[data-tab="trade"]');
+  if(tradeBtn){
+    const tier = tradeTier();
+    tradeBtn.textContent = tier === 0 ? '🔒 交易' : tier === 1 ? '🏪 交易' : tier === 2 ? '🏢 交易' : '📈 交易';
+  }
   $('turnStat').textContent = `${state.turn} / ${MAX_TURNS}`;
   $('phaseStat').textContent = state.gameOver ? '遊戲結束' : '建設階段';
   $('goldStat').textContent = `${state.gold} (${state.perTurn.gold >= 0 ? '+' : ''}${state.perTurn.gold})`;
@@ -92,7 +107,7 @@ function renderCityTab(){
   renderHand(onHandCardClick, render);   // 第二個參數：切換鎖定後重繪
   renderShop(onShopBuy, render);
   renderLog();
-  renderBuildingInfo(onUpgradeClick, onDemolishClick, isDemolishArmed());
+  renderBuildingInfo(onRenovationClick, onDemolishClick, isDemolishArmed());
 
   $('drawBtn').disabled = state.gold < 3 || state.hand.length >= HAND_LIMIT || state.gameOver;
   $('refreshShopBtn').disabled = state.gold < 2 || state.gameOver;
@@ -100,13 +115,69 @@ function renderCityTab(){
   $('cancelBtn').disabled = !state.selected;
 }
 
+function tradeTier(){
+  if(countBuilding('mint') > 0 || countBuilding('guild_hall') > 0) return 3;
+  if(countBuilding('business_center') > 0) return 2;
+  if(countBuilding('market') > 0) return 1;
+  return 0;
+}
+
+function renderTradeTab(){
+  const tier = tradeTier();
+  $('tradeTierLabel').textContent = tier === 0 ? '🔒 尚未開放' : tier === 1 ? '🏪 市場' : tier === 2 ? '🏢 商務中心' : '📈 商業投資';
+  $('tradeTierHint').textContent = tier === 0 ? '建造市場以開啟交易。' : tier === 1 ? '市場可交易卡牌與糧食；商務中心開放點數兌換。' : tier === 2 ? '商務中心已開放科技／文化點兌換；建造鑄幣所或行會會館可開放股票交易。' : '可兌換點數，並進行股票買賣。';
+  const content = $('tradeContent');
+  if(tier === 0){ content.innerHTML = '<p>建造至少一座市場後，這裡會開放卡牌交易與糧食買賣。</p>'; return; }
+  state.tradePrices ||= { foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 } };
+  const prices = state.tradePrices;
+  prices.stockHistory ||= [prices.stockPrice || 12];
+  prices.shares ||= { city:0 };
+  const offers = availableCardPool().map(id => {
+    const card = CARDS[id];
+    return `<article class="shop-item"><span class="emoji">${card.emoji}</span><strong>${card.name}</strong><small>建築卡 · ${card.cost.gold} 金幣建造費</small><button data-buy-card="${id}" ${state.gold < (card.cost.gold + 8) ? 'disabled' : ''}>購買卡牌 · ${card.cost.gold + 8} ◈</button></article>`;
+  }).join('');
+  content.innerHTML = `<div class="trade-section"><h3>購買建築卡</h3><div class="shop-grid">${offers}</div></div>
+    <div class="trade-section"><h3>糧食交易</h3><p>存糧：${Math.floor(state.storedFood)} / ${state.maxStoredFood}。每筆交易 5 糧食；買價 ${prices.foodBuy} ◈、賣價 ${prices.foodSell} ◈。買糧會推高買價並壓低賣價，賣糧則相反。</p><div class="action-row"><button data-trade="sell" ${state.storedFood < 5 ? 'disabled' : ''}>出售 5 糧食 · +${prices.foodSell} ◈</button><button data-trade="buyFood" ${state.gold < prices.foodBuy || state.storedFood + 5 > state.maxStoredFood ? 'disabled' : ''}>購買 5 糧食 · −${prices.foodBuy} ◈</button></div></div>
+    ${tier >= 2 ? `<div class="trade-section"><h3>點數兌換</h3><div class="action-row"><button data-trade="tech" ${state.gold < 12 ? 'disabled' : ''}>購買 5 科技點 · −12 ◈</button><button data-trade="culture" ${state.gold < 12 ? 'disabled' : ''}>購買 5 文化點 · −12 ◈</button></div></div>` : '<div class="trade-section"><h3>進階交易</h3><p>升級市場為商務中心，即可用金幣購買科技點與文化點。</p></div>'}
+    ${tier >= 3 ? `<div class="trade-section"><h3>城市股票</h3><p>目前股價：${prices.stockPrice} ◈／股；每回合隨機變動 −5 至 +5 ◈。買入與賣出使用同一價格。持有 ${prices.shares.city || 0} 股。</p>${renderStockChart(prices.stockHistory)}<div class="action-row"><button data-trade="buyStock" ${state.gold < prices.stockPrice ? 'disabled' : ''}>買入 1 股 · −${prices.stockPrice} ◈</button><button data-trade="sellStock" ${!(prices.shares.city > 0) ? 'disabled' : ''}>賣出 1 股 · +${prices.stockPrice} ◈</button></div></div>` : ''}`;
+  content.querySelectorAll('[data-buy-card]').forEach(button => button.addEventListener('click', () => {
+    if(state.hand.length >= HAND_LIMIT) return message('手牌已滿，無法購買卡牌。', true);
+    const id = button.dataset.buyCard, price = CARDS[id].cost.gold + 8;
+    if(state.gold < price) return message('金幣不足。', true);
+    state.gold -= price; state.hand.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), type:id });
+    render(); message(`已購買 ${CARDS[id].name} 卡牌。`, false, true);
+  }));
+  content.querySelectorAll('[data-trade]').forEach(button => button.addEventListener('click', () => {
+    const action = button.dataset.trade;
+    if(action === 'sell'){ state.storedFood -= 5; state.gold += prices.foodSell; prices.foodSell = Math.min(12, prices.foodSell + 1); prices.foodBuy = Math.max(prices.foodSell + 2, prices.foodBuy - 1); }
+    if(action === 'buyFood'){ state.gold -= prices.foodBuy; state.storedFood += 5; prices.foodBuy = Math.min(20, prices.foodBuy + 1); prices.foodSell = Math.max(1, prices.foodSell - 1); }
+    if(action === 'tech'){ state.gold -= 12; state.techPoints += 5; }
+    if(action === 'culture'){ state.gold -= 12; state.culturePoints += 5; }
+    if(action === 'buyStock'){ state.gold -= prices.stockPrice; prices.shares.city = (prices.shares.city || 0) + 1; }
+    if(action === 'sellStock' && prices.shares.city > 0){ state.gold += prices.stockPrice; prices.shares.city -= 1; }
+    render();
+  }));
+}
+
+function renderStockChart(history){
+  const values = history.slice(-12), width=560, height=150, pad=20;
+  const min=Math.min(...values), max=Math.max(...values), span=Math.max(1,max-min);
+  const points=values.map((v,i)=>`${pad+i*(width-pad*2)/Math.max(1,values.length-1)},${height-pad-(v-min)*(height-pad*2)/span}`).join(' ');
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="歷史股價走勢圖" style="width:100%;max-width:${width}px;height:auto;background:#101820;border:1px solid var(--line);border-radius:8px"><polyline points="${points}" fill="none" stroke="var(--gold)" stroke-width="3"/><text x="${pad}" y="15" fill="var(--muted)" font-size="11">${max} ◈</text><text x="${pad}" y="${height-4}" fill="var(--muted)" font-size="11">${min} ◈</text></svg>`;
+}
+
 function onBoardCellClick(c){
   clearPendingDemolish();
-  // 已選牌且點到空格 → 嘗試放置。失敗時保留 placeCard 設定的錯誤訊息（不再往下覆蓋）。
-  // 點到已有建築的格子則視為「檢視建築」，不會觸發放置錯誤。
-  if(state.selected && !c.building){
+  // 已選同類建築卡並點到原建築格，即使用該卡升級；空格照常建造。
+  if(state.selected){
     let card = state.hand.find(h => h.id === state.selected);
-    if(card){
+    if(card && c.building === card.type){
+      state.inspectedCell = {x:c.x, y:c.y};
+      placeCard(card, c);
+      render();
+      return;
+    }
+    if(card && !c.building){
       if(placeCard(card, c)) render();
       return;
     }
@@ -115,7 +186,7 @@ function onBoardCellClick(c){
   state.inspectedCell = {x: c.x, y: c.y};
   if(c.building){
     let d = CARDS[c.building];
-    message(`已選取 ${d.emoji} ${d.name} (Lv.${c.level||1})，可在右側「建築資訊」面板升級或拆除。`);
+    message(`已選取 ${d.emoji} ${d.name} (Lv.${c.level||1})。升級請打出同類建築卡至此格；Lv.3 可在右側選擇改造。`);
   } else {
     let terrainName = LANDFORM_NAMES[c.landform];
     let biomeName = BIOME_NAMES[c.biome];
@@ -129,7 +200,7 @@ function onHandCardClick(card){
   state.selected = state.selected === card.id ? null : card.id;
   render();
   let d = CARDS[card.type];
-  message(state.selected ? `已選擇 ${d.name}，請點擊棋盤。` : '已取消選牌。');
+  message(state.selected ? `已選擇 ${d.name}，點擊空格建造；若棋盤已有同類建築，點擊原格可升級。` : '已取消選牌。');
 }
 
 // 追蹤目前點擊篩選的稀有度（null 代表顯示全部）
@@ -325,7 +396,7 @@ $('deckModalConfirmBtn').addEventListener('click', () => $('deckModalBackdrop').
 // ===== 格子預覽：選牌後滑過格子，顯示「放在這裡會有什麼變化」=====
 function onCellPointer(c, ev){
   const card = state.selected ? state.hand.find(h => h.id === state.selected) : null;
-  if(!card || c.building){ hideCellTip(); tipKey = null; return; }   // 沒選牌或已有建築：不顯示
+  if(!card || (c.building && c.building !== card.type)){ hideCellTip(); tipKey = null; return; }
   const key = `${renderEpoch}|${card.id}|${c.x},${c.y}`;
   if(key !== tipKey){                                                 // 換了格子才重新計算
     tipKey = key;
@@ -348,7 +419,7 @@ function isDemolishArmed(){
 }
 function clearPendingDemolish(){ pendingDemolish = null; }
 
-function onUpgradeClick(targetChoiceId = null){
+function onRenovationClick(targetChoiceId){
   clearPendingDemolish();
   upgradeInspectedBuilding(targetChoiceId);
   render();
@@ -383,20 +454,32 @@ function onShopBuy(i, item){
 }
 
 function startGame(){
+  if(configProblems.length){
+    console.error(`設定有 ${configProblems.length} 個問題：\n` + configProblems.join('\n'));
+    message(`⚠ 設定有 ${configProblems.length} 個問題，已暫停開始遊戲；請按 F12 查看主控台。`, true);
+    return;
+  }
+
   const initialTechs = Object.keys(TECH_TREE).filter(id => TECH_TREE[id].unlocked);
   const initialCultures = Object.keys(CULTURE_TREE).filter(id => CULTURE_TREE[id].unlocked);
+  const startingBoard = terrainMap();
+  const startingBuildings = startingBoard.filter(cell => cell.building);
 
   setState({
     turn:1, gold:5, faith: 10,
     maxPopulation:0, currentPopulation:2, lostPopulation:0, storedFood:5,
     bonusScore: zeroScores(),      // 建造時永久獲得的分數（onBuild 的 xxxScore）
     scores: zeroScores(),          // 目前的最終分數（calculate 會重算）
+    unlockedAchievements: [],
+    achievementScore: 0,
+    achievementStartingBuildingCount: startingBuildings.length,
+    achievementStartingBuildingTypes: [...new Set(startingBuildings.map(cell => cell.building))],
     perTurn: {},                   // 每回合的資源產出（calculate 會重算）
     techPoints: 0, unlockedTechs: initialTechs,
     culturePoints: 0, unlockedCultures: initialCultures,
     activeMissions: [],
-    board:terrainMap(), hand:[], deck:[], 
-    shop: [],
+    board:startingBoard, hand:[], deck:[], 
+    shop: [], tradePrices:{ foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 } },
     selected:null, log:[],
     gameOver:false
   });
@@ -626,6 +709,7 @@ function switchTab(tab){
   const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
   if(btn) btn.classList.add('active');
   currentTab = tab;
+  if(tab === 'achievements') btn?.classList.remove('has-reward');
   document.getElementById('tab-' + tab).classList.add('active');
   hideCellTip(); tipKey = null;
   render();
@@ -677,7 +761,6 @@ initKeyboard({
   endTurn: () => pressButton('endTurnBtn', '遊戲已結束。'),
   draw: () => pressButton('drawBtn', '無法抽牌：金幣不足（需 3 ◈）、手牌已滿，或遊戲已結束。'),
   refreshShop: () => pressButton('refreshShopBtn', '無法刷新商店：金幣不足（需 2 ◈）或遊戲已結束。'),
-  upgrade: () => pressBuildingButton('upgradeBtn', '無法升級：金幣不足、已達最高等級，或遊戲已結束。'),
   demolish: () => pressBuildingButton('demolishBuildingBtn', '遊戲已結束，無法拆除。'),
   escape: () => {
     if(pendingDemolish){ clearPendingDemolish(); render(); message('已取消拆除。'); return; }
@@ -698,12 +781,6 @@ document.title = `Card City｜卡牌城市建造 v${VERSION}`;
 document.querySelectorAll('[data-version]').forEach(el => { el.textContent = 'v' + VERSION; });
 startGame();
 
-// 啟動時檢查建築 / 科技設定。有打錯的地方會在這裡直接指出來，而不是讓建築「安靜地沒有效果」。
-const configProblems = validateCards();
-if(configProblems.length){
-  console.error(`設定有 ${configProblems.length} 個問題：\n` + configProblems.join('\n'));
-  message(`⚠ 建築 / 科技設定有 ${configProblems.length} 個問題，請按 F12 開啟主控台查看詳情。`, true);
-}
 // ===== 公告與新手教學邏輯 =====
 
 // 開啟公告彈窗

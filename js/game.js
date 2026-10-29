@@ -273,6 +273,13 @@ export function terrainMap(){
   placeInitialBuilding(map, 'farm');
   placeInitialBuilding(map, 'tent');
   placeInitialBuilding(map, 'tent');
+
+//  ===== 用於測試一些要求建築解鎖的功能 ===== //   
+ placeInitialBuilding(map, 'market');
+ placeInitialBuilding(map, 'business_center');
+ placeInitialBuilding(map, 'mint');
+//
+
   return map;
 }
 
@@ -456,7 +463,7 @@ export function calculate(){
     for(const id in scores) scores[id] += c.stats[id];
     popBonus += c.stats.population;
 	maxFoodBonus += (c.stats.maxFood || 0);
-    usedPop += CARDS[c.building].cost.pop || 0;
+    usedPop += (CARDS[c.building].cost.pop || 0) * (c.level || 1);
 
     // 計算該建築的維護費（隨等級倍增）
     let cardDef = CARDS[c.building];
@@ -507,8 +514,8 @@ export function getScoreBreakdown(){
     state.board.forEach(cell => {
       if (cell.building) {
         let cardDef = CARDS[cell.building];
-        let rConfig = RARITY_CONFIG[cardDef?.rarity] || RARITY_CONFIG.common;
-        rarityScore += (rConfig.score || 5) * (cell.level || 1);
+        const rConfig = RARITY_CONFIG[cardDef?.rarity] || RARITY_CONFIG.common;
+        rarityScore += (rConfig?.score ?? 2) * (cell.level || 1);
       }
     });
   }
@@ -516,13 +523,15 @@ export function getScoreBreakdown(){
   let maxPop = state.maxPopulation || 1;
   let populationScore = Math.floor(maxPop / 10) * 30;
 
-  let techCultureScore = getUnlockedTechAndCultureCount() * 20;
+  let techCultureScore = (getUnlockedTechAndCultureCount() - 1) * 20;
+  let achievementScore = state.achievementScore || 0;
 
   return [
     { key: 'buildingEffect', label: '建築效果分', value: buildingEffectScore },
     { key: 'rarity', label: '建築稀有度分', value: rarityScore },
     { key: 'population', label: '人口規模里程碑', value: populationScore },
-    { key: 'techCulture', label: '科技與文化解鎖', value: techCultureScore }
+    { key: 'techCulture', label: '科技與文化解鎖', value: techCultureScore },
+    { key: 'achievement', label: '成就得分', value: achievementScore }
   ];
 }
 
@@ -537,44 +546,7 @@ export function getUnlockedTechAndCultureCount() {
 
 // 綜合計分函式
 export function calculateTotalScore(){
-  let totalScore = 0;
-
-  // 1. 建築效果提供的建築分（來自 state.scores）
-  let buildingEffectScore = (state.scores && state.scores.buildingScore) || 0;
-  totalScore += buildingEffectScore;
-
-  // 2. 建築稀有度提供的基本分（遍歷棋盤上所有現存建築）
-  let rarityScore = 0;
-  if (state && state.board) {
-    state.board.forEach(cell => {
-      if (cell.building) {
-        let cardDef = CARDS[cell.building];
-        if (cardDef && cardDef.rarity) {
-          let rarityConfig = RARITY_CONFIG[cardDef.rarity];
-          if (rarityConfig && rarityConfig.score) {
-            rarityScore += rarityConfig.score * (cell.level || 1); // 可視情況乘上等級
-          }
-        } else {
-          // 預設 common 的分數
-          rarityScore += (RARITY_CONFIG.common ? RARITY_CONFIG.common.score : 2);
-        }
-      }
-    });
-  }
-  totalScore += rarityScore;
-
-  // 最大人口數量每達到 10 的倍數獲得分數
-  let maxPop = state.maxPopulation || 1;
-  let popMilestones = Math.floor(maxPop / 10);
-  let populationScore = popMilestones * 30; // 每個區間的分數
-  totalScore += populationScore;
-
-  // 每解鎖一個科技/文化獲得固定分數
-  let unlockedNodesCount = getUnlockedTechAndCultureCount();
-  let techCultureScore = (unlockedNodesCount-1) * 20; //每個節點的分數 
-  totalScore += techCultureScore;
-
-  return totalScore;
+  return getScoreBreakdown().reduce((total, item) => total + item.value, 0);
 }
 
 // ===== 計分（集中管理）結束=====//
@@ -586,7 +558,11 @@ export function canAfford(type){
 
 export function canPlace(card,cell){
   const d=CARDS[card.type];
-  if(cell.building) return false;
+  if(cell.building){
+    if(cell.building !== card.type) return false;
+    const level = cell.level || 1;
+    return !state.gameOver && level < 3 && state.gold >= d.cost.gold * (level + 1) && state.population >= (d.cost.pop || 0);
+  }
   if(!matchesLand(cell, d)) return false;
   return canAfford(card.type);
 }
@@ -608,27 +584,34 @@ function snapshotTotals(){
 // 作法：暫時放上建築 → calculate() 取得放置後的總量 → 還原並再算一次，與放置前相減。
 export function previewPlacement(card, cell){
   const d = CARDS[card.type];
-  const result = { reason:null, delta:null, once:null };
+  const result = { reason:null, delta:null, once:null, upgrade:null };
+  const isLevelUpgrade = cell.building === card.type;
+  if(isLevelUpgrade){
+    const level = cell.level || 1;
+    result.upgrade = { cardCost:d.cost.gold, extraCost:d.cost.gold * level, totalCost:d.cost.gold * (level + 1), nextLevel:level + 1 };
+  }
 
-  if(cell.building){ result.reason = '這格已經有建築。'; return result; }
-  if(!matchesLand(cell, d)){ result.reason = d.requiresRiver && !hasRiver(cell) ? `${d.name}必須建在有河流流經邊界的格子旁。` : `${d.name}不能建在${landDescription(cell)}。`; return result; }
+  if(cell.building && !isLevelUpgrade){ result.reason = '這格已有不同類型的建築；只能用相同建築卡升級。'; return result; }
+  if(isLevelUpgrade && (cell.level || 1) >= 3){ result.reason = '建築已達 Lv.3，無法再升級。'; return result; }
+  if(!cell.building && !matchesLand(cell, d)){ result.reason = d.requiresRiver && !hasRiver(cell) ? `${d.name}必須建在有河流流經邊界的格子旁。` : `${d.name}不能建在${landDescription(cell)}。`; return result; }
   if(state.gameOver) result.reason = '遊戲已結束。';
-  else if(state.gold < d.cost.gold) result.reason = `金幣不足（需要 ${d.cost.gold} ◈，目前 ${state.gold} ◈）。`;
+  else if(isLevelUpgrade && state.gold < d.cost.gold * ((cell.level || 1) + 1)) result.reason = `金幣不足（卡牌費 ${d.cost.gold} ◈，升級費 ${d.cost.gold * (cell.level || 1)} ◈，合計 ${d.cost.gold * ((cell.level || 1) + 1)} ◈）。`;
+  else if(!isLevelUpgrade && state.gold < d.cost.gold) result.reason = `金幣不足（需要 ${d.cost.gold} ◈，目前 ${state.gold} ◈）。`;
   else if(state.population < d.cost.pop) result.reason = `可用人口不足（需要 ${d.cost.pop} 👤，目前 ${state.population} 👤）。`;
 
   calculate();
   const before = snapshotTotals();
-  const prevLevel = cell.level, prevBiome = cell.biome;
+  const prevBuilding = cell.building, prevLevel = cell.level, prevBiome = cell.biome;
   try{
     cell.building = card.type;
-    cell.level = 1;
-    if(cell.biome === 'forest' && !d.preserveForest ) cell.biome = 'grassland'; // 開發森林後保留地形，只把地貌改為草原
+    cell.level = isLevelUpgrade ? (cell.level || 1) + 1 : 1;
+    if(!isLevelUpgrade && cell.biome === 'forest' && !d.preserveForest ) cell.biome = 'grassland'; // 開發森林後保留地形，只把地貌改為草原
     calculate();
     const after = snapshotTotals();
     result.delta = {};
     for(const k in before) result.delta[k] = after[k] - before[k];
   } finally {
-    cell.building = null;
+    cell.building = prevBuilding;
     cell.level = prevLevel;
     cell.biome = prevBiome;
     calculate();
@@ -659,7 +642,11 @@ function describeGains(gains){
 export function placeCard(card,cell){
   if(state.gameOver)return false;
   let d=CARDS[card.type];
-  if(cell.building){message('這格已經有建築！',true);return false;}
+  if(cell.building){
+    if(cell.building === card.type) return upgradeBuildingWithCard(card, cell);
+    message('這格已經有不同類型的建築；選擇相同類型的卡牌才能升級。',true);
+    return false;
+  }
   if(!matchesLand(cell, d)){message(d.requiresRiver && !hasRiver(cell) ? `${d.name}必須建在有河流流經邊界的格子旁。` : `${d.name}不能建在${landDescription(cell)}。`,true);return false;}
   if(state.gold < d.cost.gold){message('金幣不足！',true);return false;}
   if(state.population < d.cost.pop){message('可用人口（勞動力）不足！請先建造住宅。',true);return false;}
@@ -679,6 +666,43 @@ export function placeCard(card,cell){
   calculate();
   addLog(`建造了 ${d.name}（-${d.cost.gold} ◈, 消耗 ${d.cost.pop} 👤）。`);
   message(`成功建造 ${d.name}！`,false,true);
+  return true;
+}
+
+export function upgradeBuildingWithCard(card, cell){
+  if(state.gameOver) return false;
+  if(!cell?.building || cell.building !== card.type){ message('只能用相同類型的建築卡升級。', true); return false; }
+  const d = CARDS[cell.building];
+  const level = cell.level || 1;
+  if(level >= 3){ message(`${d.name} 已達最高等級 Lv.3。`, true); return false; }
+
+  const cardCost = d.cost.gold;
+  const upgradeCost = cardCost * level;
+  const totalCost = cardCost + upgradeCost;
+  if(state.gold < totalCost){
+    message(`金幣不足！卡牌費 ${cardCost} ◈，Lv.${level} 升級費 ${upgradeCost} ◈，合計需要 ${totalCost} ◈。`, true);
+    return false;
+  }
+  const extraWorkers = d.cost.pop || 0;
+  if(state.population < extraWorkers){
+    message(`可用人口不足！升級需額外 ${extraWorkers} 👤 勞動力。`, true);
+    return false;
+  }
+
+  state.gold -= totalCost;
+  cell.level = level + 1;
+  const gains = computeOnBuild(cell.building, cell);
+  if(Object.keys(gains).length){
+    applyGains(gains);
+    addLog(`${d.name} 升至 Lv.${cell.level}：獲得 ${describeGains(gains)}。`);
+  }
+  cell.stats = {};
+  state.hand = state.hand.filter(handCard => handCard.id !== card.id);
+  state.selected = null;
+  playSound('upgrade');
+  calculate();
+  message(`使用 ${d.name} 卡牌升級至 Lv.${cell.level}，卡牌費 ${cardCost} ◈ + 升級費 ${upgradeCost} ◈。`, false, true);
+  addLog(`${d.name} 升級至 Lv.${cell.level}（卡牌費 ${cardCost} ◈ + 升級費 ${upgradeCost} ◈，額外消耗 ${extraWorkers} 👤）。`);
   return true;
 }
 
@@ -706,8 +730,15 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
   if(!state.inspectedCell) return false;
   let c = state.board.find(cell => cell.x === state.inspectedCell.x && cell.y === state.inspectedCell.y);
   if(!c || !c.building) { message('未選取有效建築。', true); return false; }
+  if(state.gameOver) { message('遊戲已結束，無法升級或改造建築。', true); return false; }
 
   let d = CARDS[c.building];
+  const level = Math.max(1, Math.min(3, Math.floor(c.level || 1)));
+  if(targetChoiceId === null){ message('請打出相同類型的建築卡並放到原建築格進行升級。', true); return false; }
+  if(level < 3){
+    message(`${d.name} 必須先升至 Lv.3 才能改造。`, true);
+    return false;
+  }
   
   // 1. 檢查是否有填寫升級目標
   if(!d.upgradesTo || (Array.isArray(d.upgradesTo) && d.upgradesTo.length === 0)) {
@@ -745,7 +776,7 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
     return false;
   }
 
-  let popDiff = (targetCard.cost.pop || 0) - (d.cost.pop || 0);
+  let popDiff = (targetCard.cost.pop || 0) - (d.cost.pop || 0) * level;
   if(popDiff > 0 && state.population < popDiff) {
     message(`可用人口不足！升級為 ${targetCard.name} 需要額外 ${popDiff} 👤 勞動力。`, true);
     return false;
@@ -759,8 +790,14 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
 
   playSound('upgrade');
   calculate();
+  if(state.currentPopulation > state.maxPopulation){
+    const excess = state.currentPopulation - state.maxPopulation;
+    state.currentPopulation = state.maxPopulation;
+    calculate();
+    addLog(`⚠️ 改造後人口容量下降，${excess} 名居民離開城市。`);
+  }
   message(`成功將 ${d.name} 升級改造為 ${targetCard.emoji} ${targetCard.name}！`, false, true);
-  addLog(`將 ${d.name}（(${c.x},${c.y})）升級改造為 ${targetCard.name}（-${upgradeCost} ◈）。`);
+  addLog(`將 ${d.name}（Lv.${level}，(${c.x},${c.y})）改造為 ${targetCard.name} Lv.1（-${upgradeCost} ◈）。`);
   return true;
 }
 
@@ -791,6 +828,13 @@ export function getNextMilestone() {
 
 export function endTurn(){
   if(state.gameOver) return;
+  if(state.tradePrices){
+    const change = Math.floor(Math.random() * 11) - 5;
+    state.tradePrices.stockPrice = Math.max(1, state.tradePrices.stockPrice + change);
+    state.tradePrices.stockHistory.push(state.tradePrices.stockPrice);
+    state.tradePrices.stockHistory = state.tradePrices.stockHistory.slice(-30);
+  }
+  const populationAtSettlementStart = state.currentPopulation;
   
   // 容量降低時，超出容量的居民離開城市；這與糧食短缺分開處理。
   if(state.currentPopulation > state.maxPopulation){
@@ -836,7 +880,10 @@ export function endTurn(){
   // 其餘資源產出結算...
   for(const id in state.perTurn){
     if(id === 'food') continue;
-    state[OUTPUTS[id].stateKey] += state.perTurn[id];
+    const amount = id === 'gold'
+      ? state.perTurn[id] - populationAtSettlementStart + state.currentPopulation
+      : state.perTurn[id];
+    state[OUTPUTS[id].stateKey] += amount;
   }
   playSound('coin');
 
