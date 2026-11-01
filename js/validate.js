@@ -4,6 +4,7 @@
 import { CARDS, OUTPUTS, LANDFORM_NAMES, BIOME_NAMES, TECH_TREE, CULTURE_TREE, cardPool } from './config.js';
 import { EFFECT_TYPES, TREE_EFFECT_TYPES } from './effects.js';
 import { targetList } from './board.js';
+export { validateBalance } from './balance.js';   // 平衡檢查（改造 1.2 倍規則）；與結構檢查分開，不會在遊戲啟動時打擾玩家
 
 // 舊格式欄位 → 新格式欄位的對照（貼舊程式碼進來時，直接告訴你怎麼改）
 const LEGACY_EFFECT_FIELDS = { kind: 'type', key: 'output', category: 'output', value: 'amount' };
@@ -82,6 +83,13 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
       if (e.landform !== undefined && !landforms.includes(e.landform)) bad(w, `landform "${e.landform}" 不是有效地形（可用：${landforms.join(' / ')}）。`);
       if (e.biome !== undefined && !biomes.includes(e.biome)) bad(w, `biome "${e.biome}" 不是有效地貌（可用：${biomes.join(' / ')}）。`);
       for (const f of ['radius', 'min', 'cap']) if (e[f] !== undefined && !isNum(e[f])) bad(w, `${f} 必須是數字。`);
+      if (e.by !== undefined && !['id', 'type'].includes(e.by)) bad(w, `by 只能是 'id'（不同的建築）或 'type'（不同的建築類型），目前是 \"${e.by}\"。`);
+      if (e.targetType !== undefined) {
+        const known = new Set(Object.values(cards).map(card => card.type));
+        for (const t of (Array.isArray(e.targetType) ? e.targetType : [e.targetType])) if (!known.has(t)) bad(w, `targetType \"${t}\" 不是任何建築的 type（現有：${[...known].join(' / ')}）。`);
+      }
+      if (e.amount < 0 && !['adjacentAura', 'adjacentBuilding', 'adjacentSame', 'adjacentVariety', 'adjacentEmpty', 'adjacentLandform', 'adjacentBiome', 'adjacentRiver', 'radiusBuilding'].includes(e.type))
+        bad(w, `${e.type} 的 amount 是負數：負面效果請用鄰接 / 光環類的效果（adjacentAura、adjacentBuilding、adjacentSame…），固定產出不要寫負數。`);
     });
   }
 

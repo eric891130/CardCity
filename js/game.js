@@ -617,8 +617,10 @@ export function previewPlacement(card, cell){
     calculate();
   }
 
-  const gains = computeOnBuild(card.type, cell);
-  if(Object.keys(gains).length) result.once = gains;
+  if(!isLevelUpgrade){   // 同卡升級不會觸發一次性效果
+    const gains = computeOnBuild(card.type, cell);
+    if(Object.keys(gains).length) result.once = gains;
+  }
   return result;
 }
 
@@ -691,11 +693,7 @@ export function upgradeBuildingWithCard(card, cell){
 
   state.gold -= totalCost;
   cell.level = level + 1;
-  const gains = computeOnBuild(cell.building, cell);
-  if(Object.keys(gains).length){
-    applyGains(gains);
-    addLog(`${d.name} 升至 Lv.${cell.level}：獲得 ${describeGains(gains)}。`);
-  }
+  // 「建造時一次性獲得」只在『新蓋』與『改造成該建築』時觸發；同卡升級等級不會再領一次。
   cell.stats = {};
   state.hand = state.hand.filter(handCard => handCard.id !== card.id);
   state.selected = null;
@@ -787,6 +785,13 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
   c.building = targetCardId;
   c.level = 1;
   c.stats = {};
+
+  // 改造等同「蓋出」新建築：觸發目標建築的「建造時一次性獲得」（鄰居數以改造當下的棋盤計算）。
+  const gains = computeOnBuild(targetCardId, c);
+  if(Object.keys(gains).length){
+    applyGains(gains);
+    addLog(`${targetCard.name} 改造完成：獲得 ${describeGains(gains)}。`);
+  }
 
   playSound('upgrade');
   calculate();
@@ -883,7 +888,9 @@ export function endTurn(){
     const amount = id === 'gold'
       ? state.perTurn[id] - populationAtSettlementStart + state.currentPopulation
       : state.perTurn[id];
-    state[OUTPUTS[id].stateKey] += amount;
+    const key = OUTPUTS[id].stateKey;
+    // 負面鄰接可能讓科技 / 文化 / 信仰的產出變成負數：這些點數最低扣到 0；金幣沿用原本規則（可為負）。
+    state[key] = id === 'gold' ? state[key] + amount : Math.max(0, state[key] + amount);
   }
   playSound('coin');
 

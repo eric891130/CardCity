@@ -34,6 +34,7 @@ const names = (target, targetType) => {
 };
 const capText = (e, unit) => e.cap === undefined ? '' : `（最多 ${e.cap} ${unit}）`;
 const ANY_OUTPUT = ['resource', 'capacity', 'score'];
+const isOpenLand = c => !c.building && c.landform !== 'water';
 
 export const EFFECT_TYPES = {
   points: {
@@ -64,6 +65,37 @@ export const EFFECT_TYPES = {
     count: (e, cell) => riverEdgeCount(cell),
     cond: e => `每段流經本格邊界的河流${capText(e, '段')}`
   },
+  // ---- 以下是「鄰接」的進階玩法：多樣性 / 同類 / 空地。amount 填負數就是懲罰（見檔案最下方的設計說明）----
+  adjacentVariety: {
+    title: '相鄰建築多樣性加成', phase: 'own', needs: [], optional: ['target', 'targetType', 'by', 'cap'], outputs: ANY_OUTPUT, counted: true,
+    // 相鄰建築裡「有幾種不同的」：by 省略或 'id' = 不同的建築；by:'type' = 不同的建築類型（生產 / 商業…）。
+    // 同一種蓋再多座也只算一種，所以鼓勵混搭，而不是堆同一種建築。
+    count: (e, cell) => {
+      const kinds = new Set();
+      for(const n of neighbors(cell)){
+        if(!n.building) continue;
+        if((e.target !== undefined || e.targetType !== undefined) && !matchesTarget(n.building, e.target, e.targetType)) continue;
+        kinds.add(e.by === 'type' ? CARDS[n.building]?.type : n.building);
+      }
+      return kinds.size;
+    },
+    cond: e => {
+      const scope = (e.target !== undefined || e.targetType !== undefined) ? `相鄰的${names(e.target, e.targetType)}中，` : '';
+      return `${scope}每一${e.by === 'type' ? '類不同類型' : '種不同'}的相鄰建築${capText(e, e.by === 'type' ? '類' : '種')}`;
+    }
+  },
+  adjacentSame: {
+    title: '相鄰同類建築加成 / 懲罰', phase: 'own', needs: [], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
+    // 只算「和自己同一種」的相鄰建築。amount 為正 = 聚落加成；為負 = 擁擠懲罰。
+    count: (e, cell) => matchingInstances(neighbors(cell), cell.building),
+    cond: e => `每座相鄰的同類建築${capText(e, '座')}`
+  },
+  adjacentEmpty: {
+    title: '相鄰空地加成', phase: 'own', needs: [], optional: ['cap'], outputs: ANY_OUTPUT, counted: true,
+    // 空地 = 沒有建築、且不是水域的格子。城市越擠，這類效果越少；amount 為負 = 需要擁擠才賺（很少用）。
+    count: (e, cell) => neighbors(cell).filter(isOpenLand).length,
+    cond: e => `每格相鄰的空地（沒有建築的陸地）${capText(e, '格')}`
+  },
   radiusBuilding: {
     title: '範圍內建築加成', phase: 'own', needs: ['radius'], optional: ['target', 'targetType', 'cap'], outputs: ANY_OUTPUT, counted: true,
     count: (e, cell) => matchingInstances(buildingsWithin(cell, e.radius), e.target, e.targetType),
@@ -80,7 +112,7 @@ export const EFFECT_TYPES = {
     cond: e => `城市中每一種不同的建築${capText(e, '種')}`
   },
   adjacentAura: {
-    title: '對相鄰建築提供光環', phase: 'aura', needs: ['target'], optional: [], outputs: ANY_OUTPUT,
+    title: '對相鄰建築提供光環（amount 為負 = 汙染 / 干擾）', phase: 'aura', needs: ['target'], optional: ['targetType'], outputs: ANY_OUTPUT,
     cond: e => `對每座相鄰的${names(e.target, e.targetType)}`
   },
   onBuild: {
@@ -90,6 +122,24 @@ export const EFFECT_TYPES = {
     cond: e => '建造時' + (e.target === undefined && e.targetType === undefined ? '' : `每座相鄰的${names(e.target, e.targetType)}${capText(e, '座')}`)
   }
 };
+
+// ---------- 負面鄰接 / 多樣性鄰接：設計說明 ----------
+//  負面鄰接（amount 填負數就會變成懲罰，不需要另外的 type）：
+//    adjacentAura    { target:'house', output:'culturePoints', amount:-1 }
+//                    → 「汙染」：對每座相鄰的住宅，每回合 -1 文化。作用在『別人身上』，會乘上雙方的等級。
+//    adjacentBuilding{ target:'house', output:'gold', amount:-1 }
+//                    → 「厭惡」：自己每座相鄰的住宅 -1 金幣。作用在『自己身上』。
+//    adjacentSame    { output:'gold', amount:-1, cap:3 }
+//                    → 「擁擠」：每座相鄰的同類建築 -1 金幣（最多算 3 座），防止同一種建築堆成一團。
+//  多樣性鄰接：
+//    adjacentVariety { output:'gold', amount:1, cap:4 }
+//                    → 相鄰的建築裡每多一「種」不同的，+1 金幣（最多 4 種）。
+//    adjacentVariety { by:'type', output:'culturePoints', amount:1 }
+//                    → 以「建築類型」（生產 / 商業 / 文化…）計算種類數。
+//  空地：
+//    adjacentEmpty   { output:'culturePoints', amount:1, cap:4 }
+//                    → 每格相鄰的空地 +1 文化；周圍蓋滿就沒有了，鼓勵留白。
+//  負數的產出在結算時，資源類（科技 / 文化 / 信仰點）不會被扣到 0 以下；金幣沿用原本規則。
 
 // ---------- 科技 / 文化樹的效果 ----------
 export const TREE_EFFECT_TYPES = {

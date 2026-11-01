@@ -826,10 +826,32 @@ function checkNoticeModalOnLoad() {
     localStorage.setItem('cardCity_lastSeenVersion', VERSION);
   }
 }
-function initUpdateLogVersion() {
-  const latestTitleEl = $('latestVersionTitle');
-  if (latestTitleEl) {
-    latestTitleEl.textContent = `v${VERSION} (目前版本)`;
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, character => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[character]);
+}
+
+async function renderChangelog(){
+  const container = $('changelogEntries');
+  if(!container) return;
+  try{
+    const response = await fetch('./changelog.json');
+    if(!response.ok) throw new Error(`HTTP ${response.status}`);
+    const entries = await response.json();
+    container.innerHTML = entries.map((entry, index) => {
+      const title = `v${escapeHtml(entry.version)}${index === 0 ? ' (目前版本)' : ''}`;
+      const items = Array.isArray(entry.items) && entry.items.length
+        ? entry.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')
+        : '<li>尚未填寫本次更新內容。</li>';
+      return `<div style="margin-bottom:15px;">
+        <strong style="color:var(--gold);">${title}</strong> <small style="color:var(--muted);">- ${escapeHtml(entry.date)}</small>
+        <ul style="margin:5px 0; padding-left:20px;">${items}</ul>
+      </div>`;
+    }).join('');
+  } catch(error){
+    console.error('載入更新日誌失敗：', error);
+    container.textContent = '更新日誌載入失敗。';
   }
 }
 
@@ -843,4 +865,4 @@ $('noticeTabChangelogBtn').addEventListener('click', () => switchNoticeTab('chan
 
 // 在遊戲初始化後呼叫檢查
 checkNoticeModalOnLoad();
-initUpdateLogVersion();
+renderChangelog();

@@ -2,14 +2,24 @@
 //   相鄰 = 周圍 8 格（含斜角）
 //   範圍 = 以自己為中心的正方形（棋盤距離 <= radius），不含自己
 import { state } from './state.js';
-import { SIZE } from './config.js';
+import { SIZE, CARDS } from './config.js';
 
 // target 可以是：單一建築 id、建築 id 陣列、或 'any'（任何建築）
 export function targetList(target){
   return target === undefined ? [] : Array.isArray(target) ? target : [target];
 }
-export function matchesTarget(buildingId, target){
-  return !!buildingId && (target === 'any' || targetList(target).includes(buildingId));
+// 建築是否符合條件：
+//   target      單一 id / id 陣列 / 'any'
+//   targetType  建築類型（CARDS[id].type，例如 '生產'），可為單一字串或陣列；
+//               同時給 target 與 targetType 時，兩個條件都要符合；只給 targetType 就只看類型。
+export function matchesTarget(buildingId, target, targetType){
+  if(!buildingId) return false;
+  if(targetType !== undefined){
+    const types = Array.isArray(targetType) ? targetType : [targetType];
+    if(!types.includes(CARDS[buildingId]?.type)) return false;
+    if(target === undefined) return true;
+  }
+  return target === 'any' || targetList(target).includes(buildingId);
 }
 
 export function neighbors(cell){

@@ -2,7 +2,7 @@ import { state, playSound } from './state.js';
 import { SIZE, CARDS, LANDFORM_NAMES, BIOME_NAMES, SHOP_ITEMS, OUTPUTS, RARITY_CONFIG, TECH_TREE, CULTURE_TREE, cardPool} from './config.js';
 import { canPlace, canAfford, isBuildingUnlocked } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
-import { describeCard } from './effects.js';
+import { describeCard, computeOnBuild } from './effects.js';
 import { hasResearchableNodes } from './trees.js';
 
 const $ = id => document.getElementById(id);
@@ -111,7 +111,7 @@ export function buildPlacementTip(card, cell, pv){
       const o = OUTPUTS[id];
       return tipRow('pos', o.icon, o.group === 'score' ? `${o.label}（最終）` : o.label, signed(pv.once[id]));
     });
-    html += `<div class="tip-head">${pv.upgrade ? '升級時一次性獲得' : '建造時一次性獲得'}</div>` + rows.join('');
+    html += `<div class="tip-head">建造時一次性獲得</div>` + rows.join('');
   }
   return html;
 }
@@ -403,12 +403,18 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
       let canUpgrade = lvl >= 3 && isUnlocked && state.gold >= upgradeCost && state.population >= extraWorkers && !state.gameOver;
 
       let btnLabel = lvl < 3 ? '需達 Lv.3' : !isUnlocked ? `🔒 未解鎖 ${targetCard.name}` : `改造為 ${targetCard.name}`;
+      // 改造會觸發目標建築的「建造時一次性獲得」，先告訴玩家能拿到什麼
+      const onceGains = computeOnBuild(targetId, c);
+      const onceText = Object.keys(onceGains).map(id => {
+        const o = OUTPUTS[id];
+        return o.group === 'score' ? `最終${o.label} +${onceGains[id]}` : `${o.icon}${o.label} +${onceGains[id]}`;
+      }).join('、');
 
       html += `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
           <span style="font-size:11px; color:${isUnlocked ? 'var(--gold)' : 'var(--muted)'};">
             改造目標：${targetCard.emoji} ${targetCard.name} (${upgradeCost} ◈${extraWorkers ? ` · 額外 ${extraWorkers} 👤` : ''}) ${lvl < 3 ? '<span style="color:var(--muted)">(需先升至 Lv.3)</span>' : !isUnlocked ? '<span style="color:var(--red)">(未解鎖)</span>' : ''}
-          </span>
+          ${onceText ? `<br><span style="color:var(--green)">改造時一次性獲得：${onceText}</span>` : ''}</span>
           <button class="primary upgrade-choice-btn" data-target="${targetId}" style="padding:5px 10px; font-size:11px;" ${!canUpgrade ? 'disabled' : ''}>
             ${btnLabel}
           </button>

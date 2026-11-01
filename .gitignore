@@ -1,2 +1,7 @@
 /start_game.bat
-/代辦事項.txt
+/Todo.txt
+/LOCAL_RELEASE_GUIDE.md
+/sim.mjs
+/js/config.js.tmp
+/changelog.json.tmp
+/tools
