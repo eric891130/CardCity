@@ -2,286 +2,23 @@ import { state, playSound, message } from './state.js';
 import { RARITY_CONFIG , CARDS, LANDFORM_NAMES, BIOME_NAMES, TERRAIN_NAMES, SHOP_ITEMS, MISSION_POOL, cardPool, MAX_TURNS, SIZE, OUTPUTS, BASE_PER_TURN, getRequiredScoreForTurn, TECH_TREE , CULTURE_TREE } from './config.js';
 import { countBuilding, uniqueBuildingTypes, hasRiver } from './board.js';
 import { computeCellStats, computeOnBuild, unlockedBuildingIds, activeTreeEffects } from './effects.js';
+import { generateMap, randomSeed } from './mapgen.js';
 
 export function rand(a){return a[Math.floor(Math.random()*a.length)]}
 export function shuffle(a){let b=[...a];for(let i=b.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]}return b}
 export function newCard(id){return {id:crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random()),type:id}}
 
-// 河流是格子之間的邊界，不佔用任何棋盤格。每個河段記錄在相鄰兩格的對應方向。
-const RIVER_DIRS = { N:{dx:0,dy:-1,opposite:'S'}, E:{dx:1,dy:0,opposite:'W'}, S:{dx:0,dy:1,opposite:'N'}, W:{dx:-1,dy:0,opposite:'E'} };
-
-// 💡 安全的邊界寫入輔助函式：即使在棋盤最外側，也能正確將河道邊界寫入單側或雙側格子
-function addRiverEdgeToCell(board, x, y, dir) {
-  if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) return;
-  const idx = y * SIZE + x;
-  if (!Array.isArray(board[idx].riverEdges)) board[idx].riverEdges = [];
-  if (!board[idx].riverEdges.includes(dir)) {
-    board[idx].riverEdges.push(dir);
-  }
+// ===== 地圖生成 =====
+// 實際的流程在 mapgen.js：種子 → 高度場與地形 → 河流 → 濕度 / 溫度 → 地貌 → 起始位置 → 品質檢查。
+// terrainMap(seed)：同一個種子永遠生出同一張地圖；沒給種子就隨機挑一個。
+// 回傳棋盤陣列；種子、重試次數與品質檢查結果可用 getLastMapInfo() 取得。
+let lastMapInfo = null;
+export function terrainMap(seed){
+  const result = generateMap(seed === undefined ? randomSeed() : seed);
+  lastMapInfo = { seed: result.seed, attempts: result.attempts, ok: result.ok, checks: result.checks };
+  return result.map;
 }
-
-function addRiverSegment(board, x0, y0, x1, y1) {
-  if (x0 === x1) {
-    // 垂直線
-    const x = x0;
-    const y = Math.min(y0, y1);
-    const leftCell = x - 1 >= 0 ? {x: x - 1, y: y} : null;
-    const rightCell = x < SIZE ? {x: x, y: y} : null;
-
-    if (leftCell && rightCell) {
-      addRiverEdgeToCell(board, leftCell.x, leftCell.y, 'E');
-      addRiverEdgeToCell(board, rightCell.x, rightCell.y, 'W');
-    } else if (leftCell) {
-      addRiverEdgeToCell(board, leftCell.x, leftCell.y, 'E');
-    } else if (rightCell) {
-      addRiverEdgeToCell(board, rightCell.x, rightCell.y, 'W');
-    }
-  } else {
-    // 水平線
-    const y = y0;
-    const x = Math.min(x0, x1);
-    const topCell = y - 1 >= 0 ? {x: x, y: y - 1} : null;
-    const bottomCell = y < SIZE ? {x: x, y: y} : null;
-
-    if (topCell && bottomCell) {
-      addRiverEdgeToCell(board, topCell.x, topCell.y, 'S');
-      addRiverEdgeToCell(board, bottomCell.x, bottomCell.y, 'N');
-    } else if (topCell) {
-      addRiverEdgeToCell(board, topCell.x, topCell.y, 'S');
-    } else if (bottomCell) {
-      addRiverEdgeToCell(board, bottomCell.x, bottomCell.y, 'N');
-    }
-  }
-}
-
-export function generateRiverEdges(board) {
-  // 已有河流資料時保留，避免覆蓋既有地圖或存檔。
-  if (board.some(c => Array.isArray(c.riverEdges) && c.riverEdges.length)) return board;   
-
-  for (const c of board) c.riverEdges = [];
-				  
-  const MIN_TOTAL_LENGTH = Math.ceil(SIZE * 1.5); // 12x12 棋盤至少約 18 段河道
-  const MAX_RIVERS = 4;
-  const MAX_ATTEMPTS_PER_RIVER = 12;
-  const riverSegments = new Set();
-
-  function traceRiver() {
-    for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_RIVER; attempt++) {
-      const edges = ['TOP', 'BOTTOM', 'LEFT', 'RIGHT'];
-      const chosenEdge = edges[Math.floor(Math.random() * edges.length)];
-      let vx, vy, lastDx = 0, lastDy = 0;
-
-      switch (chosenEdge) {
-        case 'TOP':    vx = Math.floor(Math.random() * (SIZE + 1)); vy = 0;    lastDy = 1; break;
-        case 'BOTTOM': vx = Math.floor(Math.random() * (SIZE + 1)); vy = SIZE; lastDy = -1; break;
-        case 'LEFT':   vx = 0;    vy = Math.floor(Math.random() * (SIZE + 1)); lastDx = 1; break;
-        case 'RIGHT':  vx = SIZE; vy = Math.floor(Math.random() * (SIZE + 1)); lastDx = -1; break;
-      }
-
-      const visited = new Set([`${vx},${vy}`]);
-      const path = [];
-      let steps = 0;
-      const maxSteps = SIZE * SIZE * 2;
-			   
-      while (steps < maxSteps) {
-        const options = [];
-        const dirs = [
-          { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
-          { dx: -1, dy: 0 }, { dx: 1, dy: 0 }
-        ];
-
-        for (const d of dirs) {
-          const nx = vx + d.dx, ny = vy + d.dy;
-          if (nx < 0 || nx > SIZE || ny < 0 || ny > SIZE) continue;
-          if (visited.has(`${nx},${ny}`)) continue;
-          if (d.dx === -lastDx && d.dy === -lastDy) continue;
-
-          const weight = (d.dx === lastDx && d.dy === lastDy) ? 2 : 1;
-          options.push({ ...d, weight });
-        }
-        if (!options.length) break;
-
-        let r = Math.random() * options.reduce((sum, o) => sum + o.weight, 0);
-        let next = options[0];
-        for (const o of options) {
-          r -= o.weight;
-          if (r <= 0) { next = o; break; }
-        }
-
-        const nx = vx + next.dx, ny = vy + next.dy;
-        path.push([vx, vy, nx, ny]);
-        visited.add(`${nx},${ny}`);
-        vx = nx; vy = ny;
-        lastDx = next.dx; lastDy = next.dy;
-        steps++;
-
-        // 至少走過數段後，碰到棋盤邊界便結束此條河流。
-        if ((vx === 0 || vx === SIZE || vy === 0 || vy === SIZE) && steps >= 4) break;
-
-      }
-
-      if (path.length >= Math.max(5, Math.floor(SIZE * 0.55))) return path;
-    }
-    return [];
-  }
-
-  // 第一條河流必定生成；若河道總長不足，會繼續補生成。
-  // 達到最低長度後，仍有機率額外生成河流，最多四條。
-  let riverCount = 0;
-  while (riverCount < MAX_RIVERS) {
-    const shouldAddRiver = riverCount === 0 ||
-      [...riverSegments].length < MIN_TOTAL_LENGTH ||
-      Math.random() < 0.1;
-    if (!shouldAddRiver) break;
-
-    const path = traceRiver();
-    if (!path.length) break;
-			  
-			  
-			  
-
-    let addedNewSegment = 0;
-    for (const [x0, y0, x1, y1] of path) {
-      const key = `${Math.min(x0,x1)},${Math.min(y0,y1)},${Math.max(x0,x1)},${Math.max(y0,y1)}`;
-      if (!riverSegments.has(key)) {
-        riverSegments.add(key);
-        addedNewSegment++;
-      }
-      addRiverSegment(board, x0, y0, x1, y1);
-    }
-    riverCount++;
-
-    // 防止因路徑重疊而一直無法增加總長。
-    if (addedNewSegment === 0 && riverCount >= 2 && riverSegments.size >= MIN_TOTAL_LENGTH) break;
-																	
-											
-										   
-  }
-
-  console.log(`🌊 [河流系統] 生成 ${riverCount} 條河流，總長度 ${riverSegments.size} 段（目標至少 ${MIN_TOTAL_LENGTH} 段）`);
-  return board;
-}
-
-
-// 以連續區域生成地形，避免每一格獨立抽籤造成棋盤像雜亂拼貼。
-function boardIndex(x,y){ return y*SIZE+x; }
-function orthogonalNeighbors(x,y){
-  const out=[];
-  if(x>0) out.push([x-1,y]);
-  if(x<SIZE-1) out.push([x+1,y]);
-  if(y>0) out.push([x,y-1]);
-  if(y<SIZE-1) out.push([x,y+1]);
-  return out;
-}
-function growLandformRegions(){
-  const total=SIZE*SIZE;
-  const counts={water:Math.max(2,Math.round(total*0.06)),mountain:Math.round(total*0.16),hill:Math.round(total*0.22)};
-  counts.plain=total-counts.water-counts.mountain-counts.hill;
-  const types=[];
-  for(const [type,count] of Object.entries(counts)) for(let i=0;i<count;i++) types.push(type);
-  // 隨機排序決定區域種子的先後，但每種地形的總量大致穩定。
-  for(let i=types.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[types[i],types[j]]=[types[j],types[i]];}
-  const cells=Array(total).fill(null), remaining={...counts};
-  // 先建立少量區域種子，再從區域邊緣擴張，讓相同地形自然聚集。
-  const seedCount={water:1,mountain:2,hill:2,plain:3};
-  const seeds=[];
-  for(const type of ['water','mountain','hill','plain']){
-    const available=Array.from({length:total},(_,i)=>i).filter(i=>!cells[i]);
-    for(let n=0;n<Math.min(seedCount[type],remaining[type]);n++){
-      const i=available.splice(Math.floor(Math.random()*available.length),1)[0];
-      if(i===undefined) continue;
-      cells[i]=type;remaining[type]--;seeds.push(i);
-    }
-  }
-  while(Object.values(remaining).some(n=>n>0)){
-    const frontier=[];
-    for(let i=0;i<total;i++) if(cells[i]){
-      const x=i%SIZE,y=Math.floor(i/SIZE);
-      for(const [nx,ny] of orthogonalNeighbors(x,y)){
-        const ni=boardIndex(nx,ny);
-        if(cells[ni]===null && !frontier.includes(ni)) frontier.push(ni);
-      }
-    }
-    if(!frontier.length) break;
-    const i=frontier[Math.floor(Math.random()*frontier.length)];
-    const x=i%SIZE,y=Math.floor(i/SIZE);
-    const neighborTypes=orthogonalNeighbors(x,y).map(([nx,ny])=>cells[boardIndex(nx,ny)]).filter(Boolean);
-    const weights={water:remaining.water||0,mountain:remaining.mountain||0,hill:remaining.hill||0,plain:remaining.plain||0};
-    // 偏向延續周圍地形；剩餘數量仍作為權重，避免單一地形吞掉整張圖。
-    for(const type of Object.keys(weights)) weights[type]*=(neighborTypes.includes(type)?3:1);
-    const sum=Object.values(weights).reduce((a,b)=>a+b,0);
-    let pick=Math.random()*sum,type='plain';
-    for(const [candidate,w] of Object.entries(weights)){pick-=w;if(pick<=0){type=candidate;break;}}
-    if(!remaining[type]) type=Object.keys(remaining).find(t=>remaining[t]>0);
-    cells[i]=type;remaining[type]--;
-  }
-  return cells;
-}
-function chooseBiome(landform, riverNearby=false){
-  if(landform==='water') return 'water';
-  if(riverNearby && Math.random()<0.42) return 'wetland';
-  const choices=landform==='mountain'
-    ? ['snow','snow','forest','grassland']
-    : landform==='hill'
-      ? ['forest','forest','grassland','grassland','snow','desert']
-      : ['grassland','grassland','grassland','forest','forest','desert','snow'];
-  return rand(choices);
-}
-
-// 隨機在符合地形限制的合法格子中放置初始建築
-function placeInitialBuilding(board, buildingType) {
-  // 過濾出所有「沒有建築」且「符合該建築地形/地貌限制」的格子
-  const validCells = board.filter(c => !c.building && matchesLand(c, CARDS[buildingType]));
-  if (validCells.length > 0) {
-    // 隨機挑選一格
-    const cell = validCells[Math.floor(Math.random() * validCells.length)];
-    cell.building = buildingType;
-    cell.level = 1;
-    // 如果該格是森林，且該建築沒有設定 preserveForest，則照規則轉為草原
-    if (cell.biome === 'forest' && !CARDS[buildingType].preserveForest) {
-      cell.biome = 'grassland';
-    }
-  }
-}
-
-export function terrainMap(){
-  const landforms=growLandformRegions();
-  const map=[];
-  for(let i=0;i<SIZE*SIZE;i++){
-    const x=i%SIZE,y=Math.floor(i/SIZE),landform=landforms[i];
-    map.push({x,y,landform,biome:landform==='water'?'water':chooseBiome(landform),riverEdges:[],building:null,level:1,stats:{}});
-  }
-  generateRiverEdges(map);
-  // 河流附近較容易形成濕地；地形不變，只調整地貌。
-  for(const cell of map){
-    if(cell.landform==='water') continue;
-    const nearRiver=hasRiver(cell)||orthogonalNeighbors(cell.x,cell.y).some(([x,y])=>hasRiver(map[boardIndex(x,y)]));
-    if(nearRiver && Math.random()<0.2) cell.biome='wetland';
-  }
-  // 對同類地形內的地貌做一次輕度平滑，讓森林、草原等形成小片區域。
-  const before=map.map(c=>c.biome);
-  for(const cell of map){
-    if(cell.landform==='water'||cell.biome==='wetland') continue;
-    const neighbors=orthogonalNeighbors(cell.x,cell.y).map(([x,y])=>map[boardIndex(x,y)]).filter(n=>n.landform===cell.landform&&n.biome!=='wetland');
-    if(!neighbors.length||Math.random()>0.48) continue;
-    const counts={};
-    for(const n of neighbors) counts[before[boardIndex(n.x,n.y)]]=(counts[before[boardIndex(n.x,n.y)]]||0)+1;
-    const mostCommon=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0];
-    if(mostCommon) cell.biome=mostCommon;
-  }
-  
-  placeInitialBuilding(map, 'farm');
-  placeInitialBuilding(map, 'tent');
-  placeInitialBuilding(map, 'tent');
-
-//  ===== 用於測試一些要求建築解鎖的功能 ===== //   
- // placeInitialBuilding(map, 'market');
- // placeInitialBuilding(map, 'business_center');
- // placeInitialBuilding(map, 'mint');
-//
-
-  return map;
-}
+export function getLastMapInfo(){ return lastMapInfo; }
 
 // 建築放置限制：地形與地貌分開判斷；未設定的欄位代表不限。
 export function matchesLand(cell, card){
@@ -304,7 +41,7 @@ export function zeroScores(){
 
 // 目前可抽到的卡池 = 基礎卡池 + 已研發科技/文化解鎖的建築（由解鎖旗標即時推導，不修改 cardPool）
 export function availableCardPool(){
-  let pool = [...cardPool];
+  let pool = cardPool.filter(id => CARDS[id]?.rarity !== 'wonder');
   const treeEffects = activeTreeEffects();
 
   // 收集所有被取代的舊建築 ID
@@ -329,6 +66,27 @@ export function availableCardPool(){
 
   // 最終過濾掉所有被取代的舊建築
   return pool.filter(id => !replacedSet.has(id));
+}
+
+export function availableWonders(){
+  return [...new Set(activeTreeEffects()
+    .filter(effect => effect.type === 'unlockWonder' && CARDS[effect.target]?.rarity === 'wonder')
+    .map(effect => effect.target))];
+}
+
+export function isWonderUnlocked(wonderId){
+  return availableWonders().includes(wonderId);
+}
+
+function wonderAlreadyStarted(wonderId){
+  return state.board.some(cell => cell.building === wonderId || cell.construction?.wonderId === wonderId);
+}
+
+export function canPlaceWonder(wonderId, cell){
+  const wonder = CARDS[wonderId];
+  return !!wonder && wonder.rarity === 'wonder' && !state.gameOver && isWonderUnlocked(wonderId) &&
+    !wonderAlreadyStarted(wonderId) && !cell.building && !cell.construction && matchesLand(cell, wonder) &&
+    state.gold >= wonder.cost.gold;
 }
 
 // 判斷某個建築目前是否「已解鎖」（可用於升級檢核或抽卡）
@@ -485,8 +243,8 @@ export function calculate(){
   // 舊存檔若沒有 currentPopulation，先以舊人口容量推定實際人口。
   if(!Number.isFinite(state.currentPopulation)) state.currentPopulation = state.maxPopulation;
   state.currentPopulation = Math.max(0, state.currentPopulation);
-  // 建築佔用的是工作人口；居民仍然存在並照常消耗糧食。
-  state.population = Math.max(0, Math.min(state.currentPopulation, state.maxPopulation) - usedPop);
+  // 人口容量只限制自然成長，不會刪除已存在的居民；超額居民仍可工作並消耗糧食。
+  state.population = Math.max(0, state.currentPopulation - usedPop);
   state.perTurn = perTurn;
   state.scores = scores;
   
@@ -558,6 +316,7 @@ export function canAfford(type){
 
 export function canPlace(card,cell){
   const d=CARDS[card.type];
+  if(cell.construction || d?.rarity === 'wonder') return false;
   if(cell.building){
     if(cell.building !== card.type) return false;
     const level = cell.level || 1;
@@ -585,6 +344,8 @@ function snapshotTotals(){
 export function previewPlacement(card, cell){
   const d = CARDS[card.type];
   const result = { reason:null, delta:null, once:null, upgrade:null };
+  if(cell.construction){ result.reason = '這格正在建造奇觀，暫時不能放置其他建築。'; return result; }
+  if(d.rarity === 'wonder'){ result.reason = '奇觀請從奇觀分頁選擇後開始建造。'; return result; }
   const isLevelUpgrade = cell.building === card.type;
   if(isLevelUpgrade){
     const level = cell.level || 1;
@@ -644,6 +405,8 @@ function describeGains(gains){
 export function placeCard(card,cell){
   if(state.gameOver)return false;
   let d=CARDS[card.type];
+  if(cell.construction){ message('這格正在建造奇觀，暫時不能放置其他建築。', true); return false; }
+  if(d.rarity === 'wonder'){ message('奇觀請從奇觀分頁選擇後開始建造。', true); return false; }
   if(cell.building){
     if(cell.building === card.type) return upgradeBuildingWithCard(card, cell);
     message('這格已經有不同類型的建築；選擇相同類型的卡牌才能升級。',true);
@@ -671,10 +434,35 @@ export function placeCard(card,cell){
   return true;
 }
 
+export function placeWonder(wonderId, cell){
+  if(state.gameOver) return false;
+  const wonder = CARDS[wonderId];
+  if(!wonder || wonder.rarity !== 'wonder') return false;
+  if(!isWonderUnlocked(wonderId)){ message(`尚未解鎖 ${wonder.name}，請先完成對應科技或文化節點。`, true); return false; }
+  if(wonderAlreadyStarted(wonderId)){ message(`${wonder.name} 已經開始建造或已完成；每局只能建造一座。`, true); return false; }
+  if(cell.building || cell.construction){ message('奇觀只能建在空地上。', true); return false; }
+  if(!matchesLand(cell, wonder)){
+    message(wonder.requiresRiver && !hasRiver(cell) ? `${wonder.name} 必須建在有河流流經邊界的格子旁。` : `${wonder.name}不能建在${landDescription(cell)}。`, true);
+    return false;
+  }
+  if(state.gold < wonder.cost.gold){ message(`金幣不足！建造 ${wonder.name} 需要 ${wonder.cost.gold} ◈。`, true); return false; }
+
+  state.gold -= wonder.cost.gold;
+  cell.construction = { wonderId, turnsRemaining: wonder.buildTurns };
+  state.selectedWonder = null;
+  state.selected = null;
+  state.inspectedCell = { x: cell.x, y: cell.y };
+  playSound('place');
+  addLog(`開始建造奇觀 ${wonder.name}（-${wonder.cost.gold} ◈，需 ${wonder.buildTurns} 回合）。`);
+  message(`開始建造 ${wonder.name}！還需 ${wonder.buildTurns} 回合完成。`, false, true);
+  return true;
+}
+
 export function upgradeBuildingWithCard(card, cell){
   if(state.gameOver) return false;
   if(!cell?.building || cell.building !== card.type){ message('只能用相同類型的建築卡升級。', true); return false; }
   const d = CARDS[cell.building];
+  if(d.rarity === 'wonder'){ message(`${d.name} 是奇觀，不能升級。`, true); return false; }
   const level = cell.level || 1;
   if(level >= 3){ message(`${d.name} 已達最高等級 Lv.3。`, true); return false; }
 
@@ -708,16 +496,11 @@ export function demolishCell(cell) {
   if(state.gameOver) return false;
   if(!cell.building) { message('這格沒有建築可以拆除。', true); return false; }
   let d = CARDS[cell.building];
+  if(d?.rarity === 'wonder'){ message(`${d.name} 是奇觀，不能拆除。`, true); return false; }
   cell.building = null;
   cell.level = 1;
   playSound('place');
   calculate();
-  if(state.currentPopulation > state.maxPopulation){
-    const excess = state.currentPopulation - state.maxPopulation;
-    state.currentPopulation = state.maxPopulation;
-    calculate();
-    addLog(`⚠️ 人口容量下降，${excess} 名居民離開城市。`);
-  }
   playSound('demolish');
   message(`已拆除 ${d.name}（拆除不會退還金錢）。`, false, true);
   addLog(`拆除了 ${d.name}。`);
@@ -731,6 +514,7 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
   if(state.gameOver) { message('遊戲已結束，無法升級或改造建築。', true); return false; }
 
   let d = CARDS[c.building];
+  if(d?.rarity === 'wonder'){ message(`${d.name} 是奇觀，不能升級或改造。`, true); return false; }
   const level = Math.max(1, Math.min(3, Math.floor(c.level || 1)));
   if(targetChoiceId === null){ message('請打出相同類型的建築卡並放到原建築格進行升級。', true); return false; }
   if(level < 3){
@@ -795,12 +579,6 @@ export function upgradeInspectedBuilding(targetChoiceId = null) {
 
   playSound('upgrade');
   calculate();
-  if(state.currentPopulation > state.maxPopulation){
-    const excess = state.currentPopulation - state.maxPopulation;
-    state.currentPopulation = state.maxPopulation;
-    calculate();
-    addLog(`⚠️ 改造後人口容量下降，${excess} 名居民離開城市。`);
-  }
   message(`成功將 ${d.name} 升級改造為 ${targetCard.emoji} ${targetCard.name}！`, false, true);
   addLog(`將 ${d.name}（Lv.${level}，(${c.x},${c.y})）改造為 ${targetCard.name} Lv.1（-${upgradeCost} ◈）。`);
   return true;
@@ -831,6 +609,31 @@ export function getNextMilestone() {
   };
 }
 
+function advanceWonderConstructions(){
+  for(const cell of state.board){
+    if(!cell.construction) continue;
+    const construction = cell.construction;
+    construction.turnsRemaining = Math.max(0, construction.turnsRemaining - 1);
+    const wonder = CARDS[construction.wonderId];
+    if(construction.turnsRemaining > 0){
+      addLog(`${wonder.name}施工中，還需 ${construction.turnsRemaining} 回合。`);
+      continue;
+    }
+
+    delete cell.construction;
+    cell.building = construction.wonderId;
+    cell.level = 1;
+    if(cell.biome === 'forest' && !wonder.preserveForest) cell.biome = 'grassland';
+    const gains = computeOnBuild(construction.wonderId, cell);
+    if(Object.keys(gains).length){
+      applyGains(gains);
+      addLog(`${wonder.name}完工：獲得 ${describeGains(gains)}。`);
+    }
+    playSound('win');
+    addLog(`奇觀 ${wonder.name} 已完工！`);
+  }
+}
+
 export function endTurn(){
   if(state.gameOver) return;
   if(state.tradePrices){
@@ -841,13 +644,6 @@ export function endTurn(){
   }
   const populationAtSettlementStart = state.currentPopulation;
   
-  // 容量降低時，超出容量的居民離開城市；這與糧食短缺分開處理。
-  if(state.currentPopulation > state.maxPopulation){
-    const excess = state.currentPopulation - state.maxPopulation;
-    state.currentPopulation = state.maxPopulation;
-    addLog(`⚠️ 人口容量不足，${excess} 名居民離開城市。`);
-  }
-
   // 糧食先供應目前實際人口；工作人口仍是居民，因此同樣消耗糧食。
   const foodProduction = state.perTurn.food || 0;
   const netFood = foodProduction - state.currentPopulation;
@@ -870,7 +666,7 @@ export function endTurn(){
       state.storedFood = foodAfterBalance;
     }
     
-    // 人口成長同時受糧食存量、糧食淨值與剩餘人口容量限制。
+    // 人口成長同時受糧食存量、糧食淨值與剩餘人口容量限制；超過容量時不成長，但不會自動流失。
     // 每累積 10 點存糧提供 1 個成長名額；淨糧食盈餘限制成長速度。
     const foodStockGrowth = Math.floor(state.storedFood / 10);
     const netFoodGrowth = Math.max(0, Math.floor(netFood));
@@ -903,6 +699,8 @@ export function endTurn(){
 
   state.turn++;
   state.selected = null;
+  advanceWonderConstructions();
+  calculate();
 
   // 每 10 回合依公式檢查一次中期分數，不再依賴固定門檻表。
   const checkingTurn = state.turn - 1;

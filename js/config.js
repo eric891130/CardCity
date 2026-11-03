@@ -1,7 +1,7 @@
 // ===== 版本（集中管理）=====
 // VERSION      遊戲顯示版本，只需改這一處（標題、畫面左上角、頁尾都會自動更新）
 // 存檔不跨版本：存檔只有在 VERSION 與寫入時完全相同才讀得進來（見 save.js），所以不需要另外維護存檔格式版本。
-export const VERSION = '0.15.2';
+export const VERSION = '0.16.0';
 export const SAVE_KEY = 'cardCitySave';
 
 export const SIZE = 12;
@@ -50,6 +50,7 @@ export const RARITY_CONFIG = {
   rare:     { name: '稀有', weight: 18, color: '#3498db', score: 3 },
   epic:     { name: '罕見', weight: 8, color: '#9b59b6', score: 5 },
   legendary:{ name: '傳說', weight: 4,  color: '#f1c40f', score: 10 },
+  wonder:   { name: '奇觀', weight: 0,  color: '#ff7b54', score: 20 },
 };
 
 // ============================================================================
@@ -63,6 +64,7 @@ export const RARITY_CONFIG = {
 //    biomes:['grassland','forest'],        // 可蓋的地貌；省略代表不限
 //    preserveForest: true,                 // True代表蓋上去後不會移除森林
 //    requiresRiver:true,                   // 必須建在有河流經過的格子旁（河流位於格子邊界）																													
+//    buildTurns:3,                         // 僅奇觀使用：需要幾個回合完成施工
 //	  upgradesTo: ['academy',],             // 升級後轉化成其他建築，沒有升級路線填 null 或留空
 //    effects:[ ...效果... ],                // 見下表；每個效果都是 { type, output, amount, ...專用欄位 }
 //    desc:'...'                            // （選填）不寫就由 effects 自動產生說明；寫了會覆蓋自動說明
@@ -161,7 +163,7 @@ export const CARDS = {
     name:'碼頭', emoji:'🐟', type:'生產', rarity:'rare',
     cost:{ gold:3, pop:1 }, upkeep:2,
     landforms:['water'], biomes:['water'],
-    upgradesTo:['port'],
+    upgradesTo:['port','shipyard'],
     effects:[
       { type:'points', output:'food', amount:2 },
       { type:'points', output:'gold', amount:2 }
@@ -328,7 +330,7 @@ export const CARDS = {
     name:'神殿', emoji:'⛪', type:'信仰', rarity:'rare',
     cost:{ gold:5, pop:2 }, upkeep:3,
     landforms:['plain','hill','mountain'], biomes:['grassland','forest','desert','snow','wetland'],
-    upgradesTo:[],
+    upgradesTo:['monastery','cathedral'],
     effects:[
       { type:'points', output:'faithPoints', amount:4 },
       { type:'points', output:'culturePoints', amount:2 },
@@ -479,7 +481,7 @@ export const CARDS = {
     name:'劇院', emoji:'🎭', type:'文化', rarity:'epic',
     cost:{ gold:9, pop:1 }, upkeep:3,
     landforms:['plain','hill'], biomes:['grassland','forest','desert'],
-    upgradesTo:[],
+    upgradesTo:['colosseum'],
     effects:[
       { type:'points', output:'culturePoints', amount:5 },
       { type:'finalScore', output:'buildingScore', amount:3 },
@@ -562,7 +564,7 @@ export const CARDS = {
     name:'陶坊', emoji:'🏺', type:'工藝', rarity:'common',
     cost:{ gold:4, pop:1 }, upkeep:1,
     landforms:['plain','hill'], biomes:['grassland','desert'],
-    upgradesTo:[],
+    upgradesTo:['glassworks'],
     effects:[
       { type:'points', output:'gold', amount:2 },
       { type:'adjacentBuilding', target:'market', output:'gold', amount:1 }
@@ -693,6 +695,163 @@ export const CARDS = {
       { type:'radiusBuilding', target:'house', radius:2, output:'culturePoints', amount:1 }
     ]
   },
+  // 工業聚落的支撐：自己產金，並讓相鄰的礦場 / 採石場 / 伐木場 / 鐵礦場多賺金幣；代價是吵到住宅，且不要蓋一堆鐵匠鋪。
+  smithy: {
+    name:'鐵匠鋪', emoji:'⚒️', type:'工業', rarity:'common',
+    cost:{ gold:4, pop:1 }, upkeep:1,
+    landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'gold', amount:2 },
+      { type:'adjacentAura', target:['mine','quarry','lumbermill','iron_mine'], output:'gold', amount:2 },
+      { type:'adjacentAura', target:'house', output:'culturePoints', amount:-1 },
+      { type:'adjacentSame', output:'gold', amount:-1, cap:2 }
+    ]
+  },
+  // 商路節點：需要「路邊的空間」，並把市場與碼頭串起來；不鼓勵蓋成一排。
+  caravanserai: {
+    name:'商隊驛站', emoji:'🐪', type:'商業', rarity:'rare',
+    cost:{ gold:6, pop:1 }, upkeep:1,
+    landforms:['plain'], biomes:['grassland','desert','snow'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'gold', amount:3 },
+      { type:'adjacentEmpty', output:'gold', amount:1, cap:4 },
+      { type:'radiusBuilding', radius:3, target:['market','dock'], output:'gold', amount:1, cap:3 },
+      { type:'adjacentSame', output:'gold', amount:-1, cap:2 }
+    ]
+  },
+  // 陶坊的下一階：玻璃窗讓相鄰的住宅更宜居（正面光環），也賣給相鄰的市場。
+  glassworks: {
+    name:'玻璃工坊', emoji:'🪟', type:'工藝', rarity:'rare',
+    cost:{ gold:5, pop:1 }, upkeep:2,
+    landforms:['plain','hill'], biomes:['grassland','desert'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'gold', amount:4 },
+      { type:'points', output:'culturePoints', amount:1 },
+      { type:'finalScore', output:'buildingScore', amount:2 },
+      { type:'adjacentAura', target:'house', output:'culturePoints', amount:1 },
+      { type:'adjacentBuilding', target:['market','guild_hall'], output:'gold', amount:1 }
+    ]
+  },
+  // 碼頭的另一條路：偏重造船與運輸網；與碼頭 / 港口互相加成。
+  shipyard: {
+    name:'造船廠', emoji:'🛠️', type:'工業', rarity:'epic',
+    cost:{ gold:8, pop:2 }, upkeep:3,
+    landforms:['water'], biomes:['water'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'gold', amount:8 },
+      { type:'points', output:'food', amount:2 },
+      { type:'finalScore', output:'buildingScore', amount:3 },
+      { type:'radiusBuilding', radius:6, target:['dock','port'], output:'gold', amount:1, cap:3 },
+      { type:'adjacentAura', target:'dock', output:'gold', amount:1 }
+    ]
+  },
+  // 神殿的科研路線：中世紀修道院抄寫與研究；需要清靜，離工業太近會被干擾（負面鄰接）。
+  monastery: {
+    name:'修道院', emoji:'🕯️', type:'信仰', rarity:'epic',
+    cost:{ gold:9, pop:2 }, upkeep:3,
+    landforms:['plain','hill','mountain'], biomes:['grassland','forest','snow','wetland'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'faithPoints', amount:5 },
+      { type:'points', output:'techPoints', amount:6 },
+      { type:'points', output:'culturePoints', amount:4 },
+      { type:'finalScore', output:'buildingScore', amount:4 },
+      { type:'adjacentEmpty', output:'faithPoints', amount:1, cap:3 },
+      { type:'adjacentBuilding', target:['factory','smithy','barracks'], output:'techPoints', amount:-2 }
+    ]
+  },
+  // 神殿的信仰 / 文化路線：城市地標；和住宅區互相加成，改造時一次性獲得大量信仰與分數。
+  cathedral: {
+    name:'大教堂', emoji:'⛪', type:'地標', rarity:'legendary',
+    cost:{ gold:14, pop:3 }, upkeep:5,
+    landforms:['plain','hill'], biomes:['grassland','forest','snow'],
+    preserveForest:true,
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'faithPoints', amount:8 },
+      { type:'points', output:'culturePoints', amount:8 },
+      { type:'finalScore', output:'buildingScore', amount:8 },
+      { type:'onBuild', output:'faithPoints', amount:10 },
+      { type:'onBuild', output:'buildingScore', amount:6 },
+      { type:'adjacentBuilding', target:'house', output:'faithPoints', amount:1, cap:4 },
+      { type:'adjacentEmpty', output:'culturePoints', amount:1, cap:3 }
+    ]
+  },
+  // 劇院的下一階：羅馬式競技場，改造時一次性獲得大筆金幣與文化；多樣的鄰居讓它更賺，但不要蓋第二座。
+  colosseum: {
+    name:'競技場', emoji:'🏟️', type:'文化', rarity:'legendary',
+    cost:{ gold:14, pop:2 }, upkeep:5,
+    landforms:['plain','hill'], biomes:['grassland','forest','desert'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'culturePoints', amount:11 },
+      { type:'points', output:'gold', amount:3 },
+      { type:'finalScore', output:'buildingScore', amount:8 },
+      { type:'onBuild', output:'gold', amount:15 },
+      { type:'onBuild', output:'culturePoints', amount:10 },
+      { type:'adjacentVariety', by:'type', output:'gold', amount:1, cap:4 },
+      { type:'adjacentEmpty', output:'culturePoints', amount:1, cap:4 },
+      { type:'adjacentSame', output:'gold', amount:-2, cap:2 }
+    ]
+  },
+  // 近代交通樞紐：把工業、港口、礦場、市場連成網；需要空間，且噪音會影響住宅。
+  railway_station: {
+    name:'火車站', emoji:'🚉', type:'公共工程', rarity:'epic',
+    cost:{ gold:12, pop:2 }, upkeep:4,
+    landforms:['plain'], biomes:['grassland','desert','snow'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'gold', amount:6 },
+      { type:'radiusBuilding', radius:6, target:['factory','port','mine','iron_mine','market'], output:'gold', amount:1, cap:5 },
+      { type:'adjacentEmpty', output:'gold', amount:1, cap:3 },
+      { type:'adjacentAura', target:'house', output:'culturePoints', amount:-1 }
+    ]
+  },
+  
+ 
+ //==========奇觀============//
+  great_pyramid: {
+    name:'大金字塔', emoji:'🔺', type:'奇觀', rarity:'wonder',
+    cost:{ gold:220, pop:0 }, upkeep:0, buildTurns:5,
+    landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'],
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'culturePoints', amount:6 },
+      { type:'finalScore', output:'buildingScore', amount:12 },
+      { type:'adjacentEmpty',output:'culturePoints', amount:1,cap:6 },
+    ]
+  },
+  great_library: {
+    name:'大圖書館', emoji:'📚', type:'奇觀', rarity:'wonder',
+    cost:{ gold:280, pop:0 }, upkeep:0, buildTurns:6,
+    landforms:['plain','hill'], biomes:['grassland','forest','desert','snow'], preserveForest:true,
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'techPoints', amount:10 },
+      { type:'points', output:'culturePoints', amount:6 },
+      { type:'finalScore', output:'buildingScore', amount:16 },
+      { type:'radiusBuilding', radius:4, target:['library','academy','university'], output:'techPoints', amount:1, cap:5 },
+      { type:'adjacentEmpty', output:'culturePoints', amount:1, cap:3 }
+    ]
+  },
+  hanging_gardens: {
+    name:'空中花園', emoji:'🌿', type:'奇觀', rarity:'wonder',
+    cost:{ gold:260, pop:0 }, upkeep:0, buildTurns:5,
+    landforms:['plain','hill'], biomes:['grassland','forest','wetland'], requiresRiver:true, preserveForest:true,
+    upgradesTo:[],
+    effects:[
+      { type:'points', output:'food', amount:5 },
+      { type:'points', output:'culturePoints', amount:7 },
+      { type:'points', output:'population', amount:3 },
+      { type:'finalScore', output:'buildingScore', amount:14 },
+      { type:'radiusBuilding', radius:4, target:['farm','orchard','greenhouse'], output:'food', amount:1, cap:5 },
+      { type:'adjacentEmpty', output:'culturePoints', amount:1, cap:4 }
+    ]
+  },
 };
 
 // ============================================================================
@@ -771,7 +930,8 @@ export const TECH_TREE = {
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'mine', mode:'addPool' },
-      { type:'buildingBonus', target:'lumbermill', output:'gold', amount:1 }
+      { type:'buildingBonus', target:'lumbermill', output:'gold', amount:1 },
+	  { type:'unlockBuilding', target:'smithy', mode:'addPool' }
     ]
   },
 
@@ -781,15 +941,17 @@ export const TECH_TREE = {
     desc: '記錄知識與交易，建立圖書館。',
     unlocked: false,
     effects: [
-      { type:'unlockBuilding', target:'library', mode:'addPool' }
+      { type:'unlockBuilding', target:'library', mode:'addPool' },
+	  { type:'unlockWonder', target:'great_library' },
     ]
   },
   masonry: {
     name: '石工技術', icon: '🧱', cost: 19, requires: ['irontool'],
-    desc: '以採石與砌築技術建造耐久的石材工坊。',
+    desc: '以採石與砌築技術建造耐久的石材工坊，並掌握建造大金字塔的技術。',
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'stoneworks', mode:'upgradeOnly' },
+      { type:'unlockWonder', target:'great_pyramid' },
       { type:'unlockBuilding', target:'quarry', mode:'addPool' }
     ]
   },
@@ -856,7 +1018,8 @@ export const TECH_TREE = {
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'mint', mode:'upgradeOnly' },
-      { type:'buildingBonus', target:'market', output:'gold', amount:1 }
+      { type:'buildingBonus', target:'market', output:'gold', amount:1 },
+	  { type:'unlockBuilding', target:'caravanserai', mode:'addPool' }
     ]
   },
 
@@ -956,7 +1119,8 @@ export const TECH_TREE = {
     unlocked: false,
     effects: [
       { type:'unlockBuilding', target:'harbor', mode:'addPool' },
-      { type:'buildingBonus', target:['port','harbor'], output:'gold', amount:1 }
+      { type:'buildingBonus', target:['port','harbor'], output:'gold', amount:1 },
+	  { type:'unlockBuilding', target:'shipyard', mode:'upgradeOnly' }
     ]
   },
   printing_technology: {
@@ -994,6 +1158,24 @@ export const TECH_TREE = {
     effects: [
       { type:'unlockBuilding', target:'clinic', mode:'upgradeOnly' },
       { type:'buildingBonus', target:'hospital', output:'population', amount:1 }
+    ]
+  },
+    railway: {
+    name: '鐵路', icon: '🚆', cost: 67, requires: ['mechanization','banking'],
+    desc: '蒸汽機與資本讓鐵路連結礦場、工廠與港口，貨物流通速度大增。',
+    unlocked: false,
+    effects: [
+      { type:'unlockBuilding', target:'railway_station', mode:'addPool' },
+      { type:'buildingBonus', target:['factory','port'], output:'gold', amount:1 }
+    ]
+  },
+  electrification: {
+    name: '電氣化', icon: '💡', cost: 78, requires: ['railway','public_health'],
+    desc: '電力讓工廠、學府與車站全天候運轉，研究與生產都更有效率。',
+    unlocked: false,
+    effects: [
+      { type:'buildingBonus', target:['library','university','observatory'], output:'techPoints', amount:2 },
+      { type:'buildingBonus', target:['factory','railway_station'], output:'gold', amount:2 }
     ]
   },
 };
@@ -1070,7 +1252,8 @@ export const CULTURE_TREE = {
     desc: '城市中的工匠世代相傳，陶器與公共浴場成為社交與文化生活的中心。',
     unlocked: false,
     effects: [
-      { type:'buildingBonus', target:['pottery','bathhouse'], output:'culturePoints', amount:1 }
+      { type:'buildingBonus', target:['pottery','bathhouse'], output:'culturePoints', amount:1 },
+	  { type:'unlockBuilding', target:'glassworks', mode:'upgradeOnly' }
     ]
   },
   public_gardens: {
@@ -1109,6 +1292,7 @@ export const CULTURE_TREE = {
     desc: '支持思想交流與知識辯論，提升學術與信仰機構的文化影響。',
     unlocked: false,
     effects: [
+	  { type:'unlockWonder', target:'hanging_gardens' },
       { type:'buildingBonus', target:['library','shrine'], output:'culturePoints', amount:2 },
       { type:'buildingBonus', target:['library','shrine'], output:'buildingScore', amount:2 }
     ]
@@ -1152,7 +1336,7 @@ export const CULTURE_TREE = {
     ]
   },
   horticultural_festivals: {
-    name: '園藝節慶', icon: '🌼', cost: 40, requires: ['civic_festivals','viticulture'],
+    name: '園藝節慶', icon: '🌼', cost: 40, requires: ['viticulture','mercantile_trust'],
     desc: '以園藝、釀酒與蜂蜜慶典凝聚居民，提升果園、葡萄園與蜂場的文化價值。',
     unlocked: false,
     effects: [
@@ -1171,7 +1355,7 @@ export const CULTURE_TREE = {
 
   // ---------- 第 7 層 ----------
   scholarship: {
-    name: '學術社群', icon: '📖', cost: 47, requires: ['Medical','guilds'],
+    name: '學術社群', icon: '📖', cost: 47, requires:['monasticism','guilds'],
     desc: '資助學術研究與知識交流，提升大學的文化產出。',
     unlocked: false,
     effects: [
@@ -1214,6 +1398,33 @@ export const CULTURE_TREE = {
     effects: [
       { type:'unlockBuilding', target:'school', mode:'addPool' },
       { type:'buildingBonus', target:'library', output:'techPoints', amount:1 }
+    ]
+  },
+    monasticism: {
+    name: '修道制度', icon: '🕯️', cost: 29, requires: ['Medical','religion'],
+    desc: '僧侶集體修行並抄寫典籍，修道院成為保存與傳播知識的據點。',
+    unlocked: false,
+    effects: [
+      { type:'unlockBuilding', target:'monastery', mode:'upgradeOnly' },
+      { type:'buildingBonus', target:'Temple', output:'faithPoints', amount:1 }
+    ]
+  },
+  public_spectacle: {
+    name: '公共競技', icon: '🏟️', cost: 37, requires: ['public_works','civic_festivals'],
+    desc: '國家出資舉辦大型競技與表演，以娛樂凝聚龐大的城市人口。',
+    unlocked: false,
+    effects: [
+      { type:'unlockBuilding', target:'colosseum', mode:'upgradeOnly' },
+      { type:'buildingBonus', target:'theater', output:'culturePoints', amount:1 }
+    ]
+  },
+  gothic_architecture: {
+    name: '哥德式建築', icon: '🏰', cost: 56, requires: ['patronage','monasticism'],
+    desc: '尖拱與飛扶壁讓教堂蓋得更高更亮，成為整座城市的精神地標。',
+    unlocked: false,
+    effects: [
+      { type:'unlockBuilding', target:'cathedral', mode:'upgradeOnly' },
+      { type:'buildingBonus', target:['Temple','cathedral'], output:'buildingScore', amount:1 }
     ]
   },
 };

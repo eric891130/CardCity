@@ -49,6 +49,7 @@ function validateSaveData(data) {
     return cell && typeof cell === 'object' && cell.x === x && cell.y === y &&
       Object.hasOwn(LANDFORM_NAMES, cell.landform) && Object.hasOwn(BIOME_NAMES, cell.biome) &&
       (cell.building == null || Object.hasOwn(CARDS, cell.building)) &&
+      (cell.construction === undefined || (cell.building == null && Object.hasOwn(CARDS, cell.construction.wonderId) && CARDS[cell.construction.wonderId].rarity === 'wonder' && Number.isInteger(cell.construction.turnsRemaining) && cell.construction.turnsRemaining > 0)) &&
       (cell.riverEdges === undefined || (Array.isArray(cell.riverEdges) && cell.riverEdges.every(dir => ['N', 'E', 'S', 'W'].includes(dir))));
   })) return '存檔格式不正確：棋盤資料包含無效地形或建築。';
   if(s.hand !== undefined && (!Array.isArray(s.hand) || s.hand.some(card => !card || !Object.hasOwn(CARDS, card.type)))) {
@@ -72,4 +73,5 @@ export function applySave(data) {
   updateDynamicTreeCosts(CULTURE_TREE, state.unlockedCultures || []);
   if(!state.activeMissions) state.activeMissions = getRandomMissions(3);
   state.selected = null;
+  state.selectedWonder = null;
 }

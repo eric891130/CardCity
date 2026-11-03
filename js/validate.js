@@ -34,7 +34,7 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     }
   };
 
-  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'upkeep', 'landforms', 'biomes', 'preserveForest', 'requiresRiver', 'upgradesTo', 'upgradeCost', 'effects', 'desc'];
+  const CARD_FIELDS = ['name', 'emoji', 'type', 'rarity', 'cost', 'upkeep', 'landforms', 'biomes', 'preserveForest', 'requiresRiver', 'upgradesTo', 'upgradeCost', 'buildTurns', 'effects', 'desc'];
   for (const id in cards) {
     const c = cards[id], at = `CARDS.${id}`;
     if (typeof c.name !== 'string' || !c.name) bad(at, '缺少 name。');
@@ -43,9 +43,12 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
     if (c.upkeep !== undefined && (!isNum(c.upkeep) || c.upkeep < 0)) bad(at, 'upkeep 必須是非負數字。');
     
     // 檢查稀有度是否在合法範圍內
-    if (!c.rarity || !['common', 'rare', 'epic', 'legendary'].includes(c.rarity)) {
-      bad(at, `rarity 必須是 common / rare / epic / legendary 其中之一。`);
+    if (!c.rarity || !['common', 'rare', 'epic', 'legendary', 'wonder'].includes(c.rarity)) {
+      bad(at, `rarity 必須是 common / rare / epic / legendary / wonder 其中之一。`);
     }
+    if(c.rarity === 'wonder' && (!Number.isInteger(c.buildTurns) || c.buildTurns < 1)) bad(at, '奇觀需要設定正整數 buildTurns。');
+    if(c.rarity === 'wonder' && c.upgradesTo && (Array.isArray(c.upgradesTo) ? c.upgradesTo.length > 0 : true)) bad(at, '奇觀不能設定升級或改造目標。');
+    if(c.rarity !== 'wonder' && c.buildTurns !== undefined) bad(at, 'buildTurns 只能用於 rarity 為 wonder 的奇觀。');
 
     // 檢查升級目標是否真實存在於 CARDS 中
     if (c.upgradesTo !== undefined) {
@@ -95,6 +98,7 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
 
   // 科技 / 文化樹
   const unlockable = new Set();
+  const wonderUnlockable = new Set();
   const upgradeOnlyBuildings = new Set(); // 👈 記錄僅限升級獲得的建築
   const upgradeTargets = new Set(); // 👈 用來收集所有「可透過升級取得」的建築目標
   const TREE_FIELDS = ['name', 'icon', 'cost', 'requires', 'desc', 'unlocked', 'effects'];
@@ -152,6 +156,11 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
           }
           if (Array.isArray(e.target) || e.target === 'any') bad(w, 'unlockBuilding 的 target 必須是單一建築 id。'); 
         }
+        if(e.type === 'unlockWonder'){
+          if(typeof e.target !== 'string' || Array.isArray(e.target) || e.target === 'any') bad(w, 'unlockWonder 的 target 必須是單一奇觀 id。');
+          else if(!cards[e.target] || cards[e.target].rarity !== 'wonder') bad(w, `unlockWonder 的 target "${e.target}" 必須是 rarity 為 wonder 的奇觀。`);
+          else wonderUnlockable.add(e.target);
+        }
         if (e.type === 'buildingBonus') { checkOutput(w, e.output, ['resource', 'capacity', 'score'], e.type); if (!isNum(e.amount)) bad(w, 'amount 必須是數字。'); }
         if (e.type === 'effectBoost') {
           if (!isNum(e.amount)) bad(w, 'amount 必須是數字。');
@@ -177,6 +186,7 @@ export function validateCards(cards = CARDS, pool = cardPool, trees = { tech: TE
   new Set(pool.filter((id, i) => pool.indexOf(id) !== i)).forEach(id => bad('cardPool', `"${id}" 重複出現了。`));
   
   for (const id in cards) {
+    if(cards[id].rarity === 'wonder' && wonderUnlockable.has(id)) continue;
     if (!pool.includes(id) && !unlockable.has(id) && !upgradeOnlyBuildings.has(id) && !upgradeTargets.has(id)) {
       bad(`CARDS.${id}`, '沒有加進 cardPool、沒有被任何科技解鎖，也無法透過建築升級取得，所以永遠無法取得。');
     }

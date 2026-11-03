@@ -47,6 +47,7 @@ export function renderTree(kind, onNodeClick) {
   const layout = layoutTree(tree);
 
   const scroller = document.createElement('div');
+  scroller.className = 'tech-tree-scroller';
   scroller.style.cssText = 'width:100%; overflow-x:auto; overflow-y:hidden;';
 
   const wrapper = document.createElement('div');

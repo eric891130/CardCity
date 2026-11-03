@@ -1,6 +1,6 @@
 import { state, playSound } from './state.js';
 import { SIZE, CARDS, LANDFORM_NAMES, BIOME_NAMES, SHOP_ITEMS, OUTPUTS, RARITY_CONFIG, TECH_TREE, CULTURE_TREE, cardPool} from './config.js';
-import { canPlace, canAfford, isBuildingUnlocked } from './game.js';
+import { canPlace, canPlaceWonder, canAfford, isBuildingUnlocked, isWonderUnlocked } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { describeCard, computeOnBuild } from './effects.js';
 import { hasResearchableNodes } from './trees.js';
@@ -47,10 +47,11 @@ export function renderBoard(onCellClick, onCellPointer, onCellLeave){
   state.board.forEach(c=>{
     let b=document.createElement('button');
     let valid = !!selCard && canPlace(selCard, c);
+    let validWonder = !!state.selectedWonder && canPlaceWonder(state.selectedWonder, c);
     let isInspected = state.inspectedCell && state.inspectedCell.x === c.x && state.inspectedCell.y === c.y;
 
-    b.className=`cell landform-${c.landform} biome-${c.biome} ${c.building?'occupied':'empty'}${valid?' selected':''}${isInspected?' inspected':''}`;
-    if(valid) b.setAttribute('data-ghost', CARDS[selCard.type].emoji);   // 滑過時顯示半透明的建築預覽
+    b.className=`cell landform-${c.landform} biome-${c.biome} ${(c.building || c.construction)?'occupied':'empty'}${valid || validWonder?' selected':''}${isInspected?' inspected':''}`;
+    if(valid || validWonder) b.setAttribute('data-ghost', valid ? CARDS[selCard.type].emoji : CARDS[state.selectedWonder].emoji);
     
     let terrainIcon={plain:'·',hill:'⌁',water:'≈',mountain:'▲'}[c.landform] || '·';
     let biomeIcon={grassland:'🌱',forest:'🌲',desert:'🏜️',snow:'❄️',water:'🌊',wetland:'🌿'}[c.biome] || '';
@@ -60,7 +61,9 @@ export function renderBoard(onCellClick, onCellPointer, onCellLeave){
     const buildingIcons = buildingLevel === 1
       ? `<span class="emoji">${buildingEmoji}</span>`
       : `<span class="building-level-icons level-${buildingLevel}" aria-hidden="true">${Array.from({length:buildingLevel}, () => `<span class="emoji">${buildingEmoji}</span>`).join('')}</span>`;
-    b.innerHTML=`${riverMarkup}<span class="terrain" title="${LANDFORM_NAMES[c.landform]}">${terrainIcon}</span><span class="biome" title="${BIOME_NAMES[c.biome]}">${biomeIcon}</span>${c.building?`${buildingIcons}<span class="bname">${CARDS[c.building].name}</span><span class="bonus">${formatBonus(c.stats)}</span>`:''}`;
+    const site = c.construction ? CARDS[c.construction.wonderId] : null;
+    const siteMarkup = site ? `<span class="emoji construction-icon">🏗️</span><span class="bname">${site.name}</span><span class="construction-status">剩 ${c.construction.turnsRemaining} 回合</span>` : '';
+    b.innerHTML=`${riverMarkup}<span class="terrain" title="${LANDFORM_NAMES[c.landform]}">${terrainIcon}</span><span class="biome" title="${BIOME_NAMES[c.biome]}">${biomeIcon}</span>${c.building?`${buildingIcons}<span class="bname">${CARDS[c.building].name}</span><span class="bonus">${formatBonus(c.stats)}</span>`:siteMarkup}`;
 	
     b.addEventListener('click',()=>{ if(onCellClick) onCellClick(c); });
     b.addEventListener('mouseenter',(ev)=>{ if(onCellPointer) onCellPointer(c, ev); });
@@ -134,7 +137,7 @@ export function hideCellTip(){
   const tip = $('cellTip'); if(tip) tip.classList.remove('show');
 }
 
-export function renderHand(onCardClick, onToggleLock){
+export function renderHand(onCardClick, onToggleLock, onDiscard){
   const el=$('hand'); el.innerHTML='';
   state.hand.forEach((card, idx)=>{
     const cardType = (typeof card === 'object' && card !== null) ? card.type : card;
@@ -169,7 +172,10 @@ export function renderHand(onCardClick, onToggleLock){
       <span class="type">${d.type}</span>
       <span class="c-desc">${describeCard(d)}</span>
       <span class="cost">費用: ${d.cost.gold}◈ / ${d.cost.pop}👤</span>
-      <button class="lock-btn ${card.locked ? 'active' : ''}" title="鎖定卡牌">${card.locked ? '🔒 已鎖定' : '🔓 鎖定'}</button>
+      <div class="card-actions">
+        <button class="lock-btn ${card.locked ? 'active' : ''}" title="鎖定卡牌">${card.locked ? '🔒 已鎖定' : '🔓 鎖定'}</button>
+        <button class="discard-btn" title="免費丟棄這張手牌" ${state.gameOver ? 'disabled' : ''}>丟棄</button>
+      </div>
     `;
 
     b.addEventListener('click', () => {
@@ -180,6 +186,18 @@ export function renderHand(onCardClick, onToggleLock){
       e.stopPropagation();
       card.locked = !card.locked;
       if(onToggleLock) onToggleLock();
+    });
+
+    b.querySelector('.discard-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const button = e.currentTarget;
+      if(button.dataset.confirmDiscard === 'true') {
+        if(onDiscard) onDiscard(card);
+        return;
+      }
+      button.dataset.confirmDiscard = 'true';
+      button.textContent = '再次確認';
+      button.classList.add('armed');
     });
 
     if(!canAfford(cardType)) b.style.opacity='.62';
@@ -346,10 +364,19 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
       <div>
         <strong style="font-size:14px; color:var(--text);">地形：${terrainName}</strong>
         <div style="font-size:11px; color:var(--muted);">地貌：${biomeName}</div>
-        <div style="font-size:11px; color:var(--muted);">座標 (${c.x}, ${c.y})${c.building ? ' · 已有建築' : ' · 可建造'}</div>
+        <div style="font-size:11px; color:var(--muted);">座標 (${c.x}, ${c.y})${c.construction ? ' · 奇觀施工中' : c.building ? ' · 已有建築' : ' · 可建造'}</div>
       </div>
     </div>
   `;
+
+  if(c.construction){
+    const wonder = CARDS[c.construction.wonderId];
+    html += `<hr style="border:none; border-top:1px solid var(--line); margin:10px 0;">
+      <strong style="color:var(--text);">🏗️ ${wonder.name}施工中</strong>
+      <p style="font-size:11px; color:var(--muted);">已投入 ${wonder.cost.gold} ◈ · 尚需 ${c.construction.turnsRemaining} 回合。施工期間此格不能建造其他建築，奇觀不能取消、升級、改造或拆除。</p>`;
+    el.innerHTML = html;
+    return;
+  }
 
   // 2. 【建築資訊區塊】如果該格子有建築，則在下方新增這一欄
   if(c.building) {
@@ -384,6 +411,12 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
         <div>目前最終分數：<b>${scoreStats || '—'}</b></div>
       </div>
     `;
+
+    if(d.rarity === 'wonder'){
+      html += '<div style="margin-top:8px; font-size:11px; color:var(--gold); text-align:center;">奇觀不可升級、改造或拆除。</div>';
+      el.innerHTML = html;
+      return;
+    }
 	
     html += lvl < 3
       ? `<div style="margin-top:8px; font-size:11px; color:var(--muted); text-align:center;">打出同類建築卡並點擊此格，可升級至 Lv.${lvl + 1}。</div>${hasUpgrade ? '<div style="margin-top:4px; font-size:10px; color:var(--muted); text-align:center;">達 Lv.3 後可使用下方改造路線。</div>' : ''}`
@@ -458,30 +491,28 @@ export function renderBuildingInfo(onUpgrade, onDemolish, demolishArmed) {
 
 // 輔助函式：檢查該卡片是由哪個科技、文化或初始卡池解鎖
 function getCardUnlockInfo(cardId) {
-	
-  // 檢查科技樹與文化樹
-  const trees = [TECH_TREE, CULTURE_TREE];
-  for (const tree of trees) {
+  const sources = [];
+  for (const [kind, tree] of [['tech', TECH_TREE], ['culture', CULTURE_TREE]]) {
     for (const techId in tree) {
       const node = tree[techId];
-      if (node.effects) {
-        const effect = node.effects.find(e => e.type === 'unlockBuilding' && e.target === cardId);
-        if (effect) {
-          const mode = effect.mode || 'addPool';
-          if (mode === 'upgradeOnly') {
-            return `科技/文化解鎖：${node.icon} ${node.name} <span style="color:var(--purple);">(僅限升級)</span>`;
-          } else if (mode === 'replacePool') {
-            const relCard = CARDS[effect.replaces];
-            const relName = relCard ? relCard.name : effect.replaces;
-            return `科技/文化解鎖：${node.icon} ${node.name} <span style="color:var(--orange);">(替代卡池中的【${relName}】)</span>`;
-          } else {
-            return `科技/文化解鎖：${node.icon} ${node.name} (加入卡池)`;
-          }
-        }
+      const effect = (node.effects || []).find(e => ['unlockBuilding', 'unlockWonder'].includes(e.type) && e.target === cardId);
+      if (!effect) continue;
+      if(effect.type === 'unlockWonder'){
+        sources.push(`奇觀：<span class="encyclopedia-unlock-link" data-kind="${kind}" data-target="${techId}">${node.icon} ${node.name}</span>`);
+        continue;
       }
+      let detail = '';
+      const mode = effect.mode || 'addPool';
+      if (mode === 'upgradeOnly') detail = ' <span style="color:var(--purple);">(僅限升級)</span>';
+      else if (mode === 'replacePool') {
+        const relCard = CARDS[effect.replaces];
+        const relName = relCard ? relCard.name : effect.replaces;
+        detail = ` <span style="color:var(--orange);">(替代卡池中的【${relName}】)</span>`;
+      } else detail = ' (加入卡池)';
+      sources.push(`<span class="encyclopedia-unlock-link" data-kind="${kind}" data-target="${techId}">${node.icon} ${node.name}</span>${detail}`);
     }
   }
-  return '初始解鎖';
+  return sources.length ? `科技/文化解鎖：${sources.join('、')}` : '初始解鎖';
 }
 
 // 輔助函式：反向檢查有哪些建築可以升級成當前卡片
@@ -584,6 +615,59 @@ export function renderEncyclopedia() {
           targetEl.classList.remove('highlight-flash');
         }, 1500);
       }
+    });
+  });
+
+  el.querySelectorAll('.encyclopedia-unlock-link').forEach(link => {
+    link.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('navigate-to-tree-node', {
+        detail: { kind: link.dataset.kind, target: link.dataset.target }
+      }));
+    });
+  });
+}
+
+export function renderWonders(onSelect){
+  const el = $('wondersContainer');
+  if(!el) return;
+  const wonders = Object.entries(CARDS).filter(([, card]) => card.rarity === 'wonder');
+  if(!wonders.length){ el.innerHTML = '<p>目前還沒有設定奇觀。</p>'; return; }
+
+  el.innerHTML = `<div class="wonder-grid">${wonders.map(([id, wonder]) => {
+    const source = [];
+    for(const [kind, tree] of [['tech', TECH_TREE], ['culture', CULTURE_TREE]]){
+      for(const nodeId in tree){
+        const node = tree[nodeId];
+        if((node.effects || []).some(effect => effect.type === 'unlockWonder' && effect.target === id)){
+          source.push(`<span class="wonder-unlock-link" data-kind="${kind}" data-target="${nodeId}">${node.icon} ${node.name}</span>`);
+        }
+      }
+    }
+    const construction = state.board.find(cell => cell.construction?.wonderId === id);
+    const built = state.board.some(cell => cell.building === id);
+    const unlocked = isWonderUnlocked(id);
+    const alreadyStarted = !!construction || built;
+    const selected = state.selectedWonder === id;
+    const disabled = !unlocked || alreadyStarted || state.gold < wonder.cost.gold || state.gameOver;
+    const status = built ? '已完工' : construction ? `施工中 · 剩 ${construction.construction.turnsRemaining} 回合` : !unlocked ? '尚未解鎖' : state.gold < wonder.cost.gold ? `金幣不足（需要 ${wonder.cost.gold} ◈）` : `建造費 ${wonder.cost.gold} ◈ · ${wonder.buildTurns} 回合`;
+    return `<article id="wonder-card-${id}" class="wonder-card${selected ? ' selected' : ''}">
+      <div class="wonder-card-title"><span class="emoji">${wonder.emoji}</span><div><h3>${wonder.name}</h3><small>${wonder.type} · ${RARITY_CONFIG.wonder.name}</small></div></div>
+      <p>${describeCard(wonder)}</p>
+      <div class="wonder-details"><span>費用：${wonder.cost.gold} ◈</span><span>工期：${wonder.buildTurns} 回合</span><span>完工得分：${RARITY_CONFIG.wonder.score} 分</span></div>
+      <div class="wonder-source"><b>解鎖需求：</b>${source.length ? source.join('、') : '尚未設定'}</div>
+      <div class="wonder-status">${status}</div>
+      <button class="primary wonder-build-btn" data-wonder="${id}" ${disabled ? 'disabled' : ''}>${selected ? '已選擇' : alreadyStarted ? (built ? '已建造' : '建造中') : '選擇建造'}</button>
+    </article>`;
+  }).join('')}</div>`;
+
+  el.querySelectorAll('.wonder-build-btn').forEach(button => {
+    button.addEventListener('click', () => onSelect?.(button.dataset.wonder));
+  });
+  el.querySelectorAll('.wonder-unlock-link').forEach(link => {
+    link.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('navigate-to-tree-node', {
+        detail: { kind: link.dataset.kind, target: link.dataset.target }
+      }));
     });
   });
 }

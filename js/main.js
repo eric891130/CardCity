@@ -1,13 +1,14 @@
 import { state, setState, soundEnabled, setSoundEnabled, playSound, message } from './state.js';
 import { HAND_LIMIT, LANDFORM_NAMES, BIOME_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG, updateDynamicTreeCosts} from './config.js';
-import { rand, calculate, terrainMap, availableCardPool, shuffle, drawFromDeck, makeShop, rebuildShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
+import { rand, calculate, terrainMap, availableCardPool, shuffle, drawFromDeck, makeShop, rebuildShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, placeWonder, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
-import { renderBoard, renderHand, renderShop, renderMissions, updateAllTabNotifications, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia, } from './render.js';
+import { renderBoard, renderHand, renderShop, renderMissions, renderWonders, updateAllTabNotifications, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia, } from './render.js';
 import { TREES, renderTree, openTreeModal, closeTreeModal, unlockSelectedNode } from './trees.js';
 import { writeSave, readSave, applySave } from './save.js';
 import { initKeyboard, SHORTCUT_LIST } from './keys.js';
 import { validateCards } from './validate.js';
 import { describeCard } from './effects.js';
+import { randomSeed, parseSeed } from './mapgen.js';
 import { updateAchievements, renderAchievements } from './achievements.js';
 
 const $ = id => document.getElementById(id);
@@ -25,6 +26,10 @@ $('tutorialScoreCheckpoints').textContent = scoreCheckpoints.length
 // render() 只更新「頂部統計列」與「目前所在的分頁」；其他分頁在切換過去時才會繪製。
 // 這樣在城市分頁操作時，不會白白重畫科技樹 / 文化樹 / 任務清單。
 let currentTab = 'city';
+const treeTabScrollPositions = {
+  tech: { pageY: 0, treeX: 0 },
+  culture: { pageY: 0, treeX: 0 }
+};
 let renderEpoch = 0;          // 每次 render 加 1：格子重建後，預覽提示需要重新計算
 let tipKey = null;            // 目前預覽提示對應的 (render, 卡牌, 格子)，相同就只移動位置、不重算
 let pendingDemolish = null;   // {x, y}：已按過一次「拆除」，等待第二次確認
@@ -39,6 +44,8 @@ function render(){
   }
   calculate();
   renderStats();
+  const seedNote = $('mapSeedNote');
+  if(seedNote) seedNote.textContent = state.mapSeed === undefined ? '' : `🗺️ 地圖種子：${state.mapSeed}（網址後面加上 ?seed=${state.mapSeed} 可以重現這張地圖）`;
   updateAllTabNotifications();
 
   switch(currentTab){
@@ -47,6 +54,7 @@ function render(){
     case 'culture': renderTree('culture', id => openTreeModal('culture', id)); break;
     case 'missions': renderMissions(claimMission); break;
 	case 'trade': renderTradeTab(); break;
+	case 'wonders': renderWonders(onWonderSelected); break;
 	case 'encyclopedia': renderEncyclopedia(); break;
 	case 'achievements': renderAchievements(); break;
   }
@@ -111,8 +119,12 @@ function renderStats(){
 }
 
 function renderCityTab(){
+  const boardHint = $('cityBoardHint');
+  if(boardHint) boardHint.textContent = state.selectedWonder
+    ? `已選擇 ${CARDS[state.selectedWonder]?.name || '奇觀'}：點擊符合地形限制的空地開始施工。`
+    : '注意建造建築需要消耗金幣與對應人口！';
   renderBoard(onBoardCellClick, onCellPointer, onCellLeave);
-  renderHand(onHandCardClick, render);   // 第二個參數：切換鎖定後重繪
+  renderHand(onHandCardClick, render, onDiscardHandCard);
   renderShop(onShopBuy, render);
   renderLog();
   renderBuildingInfo(onRenovationClick, onDemolishClick, isDemolishArmed());
@@ -120,7 +132,7 @@ function renderCityTab(){
   $('drawBtn').disabled = state.gold < 3 || state.hand.length >= HAND_LIMIT || state.gameOver;
   $('refreshShopBtn').disabled = state.gold < 2 || state.gameOver;
   $('endTurnBtn').disabled = state.gameOver;
-  $('cancelBtn').disabled = !state.selected;
+  $('cancelBtn').disabled = !state.selected && !state.selectedWonder;
 }
 
 function tradeTier(){
@@ -176,6 +188,11 @@ function renderStockChart(history){
 
 function onBoardCellClick(c){
   clearPendingDemolish();
+  if(state.selectedWonder){
+    if(placeWonder(state.selectedWonder, c)) render();
+    else render();
+    return;
+  }
   // 已選同類建築卡並點到原建築格，即使用該卡升級；空格照常建造。
   if(state.selected){
     let card = state.hand.find(h => h.id === state.selected);
@@ -195,6 +212,9 @@ function onBoardCellClick(c){
   if(c.building){
     let d = CARDS[c.building];
     message(`已選取 ${d.emoji} ${d.name} (Lv.${c.level||1})。升級請打出同類建築卡至此格；Lv.3 可在右側選擇改造。`);
+  } else if(c.construction){
+    const wonder = CARDS[c.construction.wonderId];
+    message(`${wonder.name}正在施工，還需 ${c.construction.turnsRemaining} 回合完成。`);
   } else {
     let terrainName = LANDFORM_NAMES[c.landform];
     let biomeName = BIOME_NAMES[c.biome];
@@ -205,10 +225,36 @@ function onBoardCellClick(c){
 
 function onHandCardClick(card){
   clearPendingDemolish();
+  state.selectedWonder = null;
   state.selected = state.selected === card.id ? null : card.id;
   render();
   let d = CARDS[card.type];
   message(state.selected ? `已選擇 ${d.name}，點擊空格建造；若棋盤已有同類建築，點擊原格可升級。` : '已取消選牌。');
+}
+
+function onWonderSelected(wonderId){
+  if(state.gameOver) return;
+  state.selectedWonder = state.selectedWonder === wonderId ? null : wonderId;
+  state.selected = null;
+  if(state.selectedWonder){
+    switchTab('city');
+    message(`已選擇 ${CARDS[wonderId].name}。點擊城市中的空地開始建造。`);
+  } else {
+    render();
+    message('已取消奇觀選擇。');
+  }
+}
+
+function onDiscardHandCard(card){
+  if(state.gameOver) return;
+  const index = state.hand.findIndex(handCard => handCard === card || handCard.id === card.id);
+  if(index < 0) return;
+  state.hand.splice(index, 1);
+  if(state.selected === card.id) state.selected = null;
+  clearPendingDemolish();
+  hideCellTip(); tipKey = null;
+  render();
+  message(`已丟棄 ${CARDS[card.type]?.name || '手牌'}，未消耗金幣。`, false, true);
 }
 
 // 追蹤目前點擊篩選的稀有度（null 代表顯示全部）
@@ -233,6 +279,7 @@ function openDeckModal() {
 
   let totalWeight = 0;
   for (const r in RARITY_CONFIG) {
+    if(r === 'wonder') continue;
     if (poolByRarity[r] && poolByRarity[r].length > 0) {
       totalWeight += RARITY_CONFIG[r].weight || 10;
     }
@@ -254,6 +301,7 @@ function openDeckModal() {
   // 2. 稀有度機率概覽列（加入可點擊的篩選效果，若被點擊則加上邊框高亮）
   html += `<div style="display:flex; gap:8px; margin-bottom:12px; font-size:11px;">`;
   for (const r in RARITY_CONFIG) {
+    if(r === 'wonder') continue;
     const conf = RARITY_CONFIG[r];
     const count = poolByRarity[r] ? poolByRarity[r].length : 0;
     const pct = (count > 0 && totalWeight > 0) ? ((conf.weight / totalWeight) * 100).toFixed(1) : 0;
@@ -438,6 +486,7 @@ function onRenovationClick(targetChoiceId){
 function onDemolishClick(){
   const c = selectedBuildingCell();
   if(!c || state.gameOver) return;
+  if(CARDS[c.building]?.rarity === 'wonder') return message(`${CARDS[c.building].name} 是奇觀，不能拆除。`, true);
   if(!isDemolishArmed()){
     pendingDemolish = { x: c.x, y: c.y };
     const d = CARDS[c.building];
@@ -461,6 +510,8 @@ function onShopBuy(i, item){
   message(`成功施放奇蹟【${item.name}】！`, false, true);
 }
 
+// 網址加上 ?seed=123456 可以重現同一張地圖（只對載入頁面後的第一局有效，之後重新開始會換新地圖）
+let pendingUrlSeed = typeof location !== 'undefined' ? parseSeed(new URLSearchParams(location.search).get('seed')) : null;
 function startGame(){
   if(configProblems.length){
     console.error(`設定有 ${configProblems.length} 個問題：\n` + configProblems.join('\n'));
@@ -468,7 +519,9 @@ function startGame(){
     return;
   }
 
-  const startingBoard = terrainMap();
+  const mapSeed = pendingUrlSeed ?? randomSeed();
+  pendingUrlSeed = null;
+  const startingBoard = terrainMap(mapSeed);
   const startingBuildings = startingBoard.filter(cell => cell.building);
 
   setState({
@@ -486,7 +539,9 @@ function startGame(){
     activeMissions: [],
     board:startingBoard, hand:[], deck:[], 
     shop: [], tradePrices:{ foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 } },
+	mapSeed,
     selected:null, log:[],
+    selectedWonder:null,
     gameOver:false
   });
 
@@ -630,8 +685,17 @@ $('refreshShopBtn').addEventListener('click', () => {
 
 $('cancelBtn').addEventListener('click', () => {
   state.selected = null;
+  state.selectedWonder = null;
   render();
   message('已取消選牌。');
+});
+
+$('toggleBuildingOutputBtn').addEventListener('click', event => {
+  const button = event.currentTarget;
+  const isVisible = button.getAttribute('aria-pressed') !== 'true';
+  $('board').classList.toggle('hide-building-output', !isVisible);
+  button.setAttribute('aria-pressed', String(isVisible));
+  button.textContent = `產出顯示：${isVisible ? '開' : '關'}`;
 });
 
 $('saveBtn').addEventListener('click', saveGame);$('loadBtn').addEventListener('click', loadGame);
@@ -711,6 +775,13 @@ $('eventModalClose').addEventListener('click', () => {
 
 function switchTab(tab){
   if(currentTab == tab) return;
+  if(currentTab === 'tech' || currentTab === 'culture') {
+    const scroller = $(`${currentTab}TreeContainer`)?.querySelector('.tech-tree-scroller');
+    treeTabScrollPositions[currentTab] = {
+      pageY: window.scrollY,
+      treeX: scroller?.scrollLeft || 0
+    };
+  }
   playSound('page');
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -721,7 +792,67 @@ function switchTab(tab){
   document.getElementById('tab-' + tab).classList.add('active');
   hideCellTip(); tipKey = null;
   render();
+  if(tab === 'tech' || tab === 'culture') {
+    const position = treeTabScrollPositions[tab];
+    requestAnimationFrame(() => {
+      const scroller = $(`${tab}TreeContainer`)?.querySelector('.tech-tree-scroller');
+      if (scroller) scroller.scrollLeft = position.treeX;
+      window.scrollTo(0, position.pageY);
+    });
+  }
 }
+
+function highlightAndScroll(element) {
+  if (!element) return;
+  element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  element.classList.add('highlight-flash');
+  setTimeout(() => element.classList.remove('highlight-flash'), 1500);
+}
+
+document.addEventListener('navigate-to-encyclopedia-card', event => {
+  const target = event.detail?.target;
+  if (!target) return;
+  closeTreeModal('tech');
+  closeTreeModal('culture');
+  switchTab('encyclopedia');
+  requestAnimationFrame(() => highlightAndScroll($(`encyclopedia-card-${target}`)));
+});
+
+document.addEventListener('navigate-to-tree-node', event => {
+  const { kind, target } = event.detail || {};
+  if (!kind || !target || !TREES[kind]?.tree[target]) return;
+  switchTab(kind);
+  requestAnimationFrame(() => {
+    highlightAndScroll($(`${kind}-node-${target}`));
+    openTreeModal(kind, target);
+  });
+});
+
+document.addEventListener('navigate-to-wonder', event => {
+  const target = event.detail?.target;
+  if (!target || !CARDS[target] || CARDS[target].rarity !== 'wonder') return;
+  closeTreeModal('tech');
+  closeTreeModal('culture');
+  switchTab('wonders');
+  requestAnimationFrame(() => highlightAndScroll($(`wonder-card-${target}`)));
+});
+
+document.addEventListener('click', event => {
+  const link = event.target.closest('.tree-building-link');
+  const wonderLink = event.target.closest('.tree-wonder-link');
+  if(wonderLink){
+    event.preventDefault();
+    event.stopPropagation();
+    document.dispatchEvent(new CustomEvent('navigate-to-wonder', { detail: { target: wonderLink.dataset.target } }));
+    return;
+  }
+  if (!link) return;
+  event.preventDefault();
+  event.stopPropagation();
+  document.dispatchEvent(new CustomEvent('navigate-to-encyclopedia-card', {
+    detail: { target: link.dataset.target }
+  }));
+});
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.getAttribute('data-tab')));
@@ -772,6 +903,7 @@ initKeyboard({
   demolish: () => pressBuildingButton('demolishBuildingBtn', '遊戲已結束，無法拆除。'),
   escape: () => {
     if(pendingDemolish){ clearPendingDemolish(); render(); message('已取消拆除。'); return; }
+    if(state.selectedWonder){ state.selectedWonder = null; render(); message('已取消奇觀選擇。'); return; }
     if(state.selected){ state.selected = null; render(); message('已取消選牌。'); return; }
     if(state.inspectedCell){ state.inspectedCell = null; render(); message('已取消選取格子。'); }
   }

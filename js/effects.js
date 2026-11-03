@@ -144,6 +144,7 @@ export const EFFECT_TYPES = {
 // ---------- 科技 / 文化樹的效果 ----------
 export const TREE_EFFECT_TYPES = {
   unlockBuilding: { title: '解鎖建築', needs: ['target'], optional: ['mode', 'replaces'] },
+  unlockWonder:  { title: '解鎖奇觀', needs: ['target'], optional: [] },
   buildingBonus:  { title: '指定建築類型的固定加成（依建築等級倍增）', needs: ['output', 'amount'], optional: ['target', 'targetType'] },
   effectBoost:    { title: '強化指定建築或類型的某種效果', needs: ['effectType', 'amount'], optional: ['target', 'targetType'] }
 };
@@ -167,7 +168,9 @@ export function describeTreeEffect(e) {
   switch (e.type) {
     case 'unlockBuilding': {
       const targetCard = CARDS[e.target];
-      const targetName = targetCard ? `${targetCard.emoji} ${targetCard.name}` : e.target;
+      const targetName = targetCard
+        ? `<span class="tree-building-link" data-target="${e.target}">${targetCard.emoji} ${targetCard.name}</span>`
+        : e.target;
       const mode = e.mode || 'addPool';
 
       if (mode === 'upgradeOnly') {
@@ -179,6 +182,12 @@ export function describeTreeEffect(e) {
       } else {
         return `解鎖新建築【${targetName}】（加入抽牌卡池）`;
       }
+    }
+
+    case 'unlockWonder': {
+      const wonder = CARDS[e.target];
+      const name = wonder ? `${wonder.emoji} ${wonder.name}` : e.target;
+      return `解鎖奇觀 <span class="tree-wonder-link" data-target="${e.target}">${name}</span>（可在奇觀分頁開始建造）`;
     }
 
     case 'buildingBonus': {
