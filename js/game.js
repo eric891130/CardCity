@@ -174,6 +174,27 @@ export function drawFromDeck() {
   return newCard(chosenType);
 }
 
+export function makeCardOffers(){
+  return Array.from({ length: 5 }, () => drawFromDeck().type);
+}
+
+export function refreshCardShop(){
+  if(state.gameOver) return false;
+  const prices = state.tradePrices;
+  prices.cardRefreshCost ??= 5;
+  if(state.gold < prices.cardRefreshCost){
+    message(`金幣不足！刷新卡牌商店需要 ${prices.cardRefreshCost} ◈。`, true);
+    return false;
+  }
+  const paid = prices.cardRefreshCost;
+  state.gold -= paid;
+  prices.cardRefreshCost += 5;
+  prices.cardOffers = makeCardOffers();
+  playSound('page');
+  addLog(`刷新卡牌商店（-${paid} ◈；下次刷新費用 ${prices.cardRefreshCost} ◈）。`);
+  return true;
+}
+
 // 商店只存 {id, locked}，不存函式（函式無法 JSON 存檔），顯示/購買時再從 SHOP_ITEMS 查表
 export function makeShop(){return shuffle(SHOP_ITEMS).slice(0, 3).map(item => ({ id: item.id, locked: false }));}
 // 重新整理商店：保留鎖定的商品，其餘重抽補滿 3 格（回合開始與手動刷新共用）
@@ -722,5 +743,7 @@ export function endTurn(){
       state.hand.push(drawFromDeck());
     }
     rebuildShop();
+    state.tradePrices.cardRefreshCost = 5;
+    state.tradePrices.cardOffers = makeCardOffers();
   }
 }

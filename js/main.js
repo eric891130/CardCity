@@ -1,6 +1,6 @@
 import { state, setState, soundEnabled, setSoundEnabled, playSound, message } from './state.js';
 import { HAND_LIMIT, LANDFORM_NAMES, BIOME_NAMES, CARDS, TECH_TREE, CULTURE_TREE, MISSION_POOL, EVENT_POOL, cardPool, MAX_TURNS, VERSION, RARITY_CONFIG, updateDynamicTreeCosts} from './config.js';
-import { rand, calculate, terrainMap, availableCardPool, shuffle, drawFromDeck, makeShop, rebuildShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, placeWonder, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
+import { rand, calculate, terrainMap, availableCardPool, shuffle, drawFromDeck, makeShop, rebuildShop, makeCardOffers, refreshCardShop, calculateTotalScore, getNextMilestone, getScoreBreakdown, getRandomMissions, endTurn, placeCard, placeWonder, demolishCell, previewPlacement, upgradeInspectedBuilding, zeroScores, addLog } from './game.js';
 import { countBuilding, uniqueBuildingTypes } from './board.js';
 import { renderBoard, renderHand, renderShop, renderMissions, renderWonders, updateAllTabNotifications, renderLog, renderBuildingInfo, buildPlacementTip, setCellTip, moveCellTip, hideCellTip, renderEncyclopedia, } from './render.js';
 import { TREES, renderTree, openTreeModal, closeTreeModal, unlockSelectedNode } from './trees.js';
@@ -148,25 +148,38 @@ function renderTradeTab(){
   $('tradeTierHint').textContent = tier === 0 ? '建造市場以開啟交易。' : tier === 1 ? '市場可交易卡牌與糧食；商務中心開放點數兌換。' : tier === 2 ? '商務中心已開放科技／文化點兌換；建造鑄幣所或行會會館可開放股票交易。' : '可兌換點數，並進行股票買賣。';
   const content = $('tradeContent');
   if(tier === 0){ content.innerHTML = '<p>建造至少一座市場後，這裡會開放卡牌交易與糧食買賣。</p>'; return; }
-  state.tradePrices ||= { foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 } };
+  state.tradePrices ||= { foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 }, cardRefreshCost:5, cardOffers:makeCardOffers() };
   const prices = state.tradePrices;
   prices.stockHistory ||= [prices.stockPrice || 12];
   prices.shares ||= { city:0 };
-  const offers = availableCardPool().map(id => {
+  prices.cardRefreshCost ??= 5;
+  if(!Array.isArray(prices.cardOffers) || prices.cardOffers.length !== 5) prices.cardOffers = makeCardOffers();
+  const offers = prices.cardOffers.map((id, slot) => {
+    if(!id) return `<article class="shop-item sold"><span class="emoji">✓</span><strong>已售出</strong><small>刷新商店後補貨</small><button disabled>本欄售罄</button></article>`;
     const card = CARDS[id];
-    return `<article class="shop-item"><span class="emoji">${card.emoji}</span><strong>${card.name}</strong><small>建築卡 · ${card.cost.gold} 金幣建造費</small><button data-buy-card="${id}" ${state.gold < (card.cost.gold + 8) ? 'disabled' : ''}>購買卡牌 · ${card.cost.gold + 8} ◈</button></article>`;
+    const price = card.cost.gold + 8;
+    return `<article class="shop-item"><span class="emoji">${card.emoji}</span><strong>${card.name}</strong><small>建築卡 · 建造費 ${card.cost.gold} ◈ · 販售價 ${price} ◈</small><button data-buy-card="${slot}" ${state.hand.length >= HAND_LIMIT || state.gold < price ? 'disabled' : ''}>購買卡牌 · ${price} ◈</button></article>`;
   }).join('');
-  content.innerHTML = `<div class="trade-section"><h3>購買建築卡</h3><div class="shop-grid">${offers}</div></div>
+  content.innerHTML = `<div class="trade-section"><div class="card-market-heading"><div><h3>建築卡商店</h3><p>每回合隨機販售五張卡牌，稀有度機率與抽手牌相同；刷新費每次增加 5 ◈，回合結束重置為 5 ◈。</p></div><button data-refresh-card-shop ${state.gameOver || state.gold < prices.cardRefreshCost ? 'disabled' : ''}>刷新商品 · ${prices.cardRefreshCost} ◈</button></div><div class="card-market-grid">${offers}</div></div>
     <div class="trade-section"><h3>糧食交易</h3><p>存糧：${Math.floor(state.storedFood)} / ${state.maxStoredFood}。每筆交易 5 糧食；買價 ${prices.foodBuy} ◈、賣價 ${prices.foodSell} ◈。買糧會推高買價並壓低賣價，賣糧則相反。</p><div class="action-row"><button data-trade="sell" ${state.storedFood < 5 ? 'disabled' : ''}>出售 5 糧食 · +${prices.foodSell} ◈</button><button data-trade="buyFood" ${state.gold < prices.foodBuy || state.storedFood + 5 > state.maxStoredFood ? 'disabled' : ''}>購買 5 糧食 · −${prices.foodBuy} ◈</button></div></div>
     ${tier >= 2 ? `<div class="trade-section"><h3>點數兌換</h3><div class="action-row"><button data-trade="tech" ${state.gold < 12 ? 'disabled' : ''}>購買 5 科技點 · −12 ◈</button><button data-trade="culture" ${state.gold < 12 ? 'disabled' : ''}>購買 5 文化點 · −12 ◈</button></div></div>` : '<div class="trade-section"><h3>進階交易</h3><p>升級市場為商務中心，即可用金幣購買科技點與文化點。</p></div>'}
     ${tier >= 3 ? `<div class="trade-section"><h3>城市股票</h3><p>目前股價：${prices.stockPrice} ◈／股；每回合隨機變動 −5 至 +5 ◈。買入與賣出使用同一價格。持有 ${prices.shares.city || 0} 股。</p>${renderStockChart(prices.stockHistory)}<div class="action-row"><button data-trade="buyStock" ${state.gold < prices.stockPrice ? 'disabled' : ''}>買入 1 股 · −${prices.stockPrice} ◈</button><button data-trade="sellStock" ${!(prices.shares.city > 0) ? 'disabled' : ''}>賣出 1 股 · +${prices.stockPrice} ◈</button></div></div>` : ''}`;
   content.querySelectorAll('[data-buy-card]').forEach(button => button.addEventListener('click', () => {
     if(state.hand.length >= HAND_LIMIT) return message('手牌已滿，無法購買卡牌。', true);
-    const id = button.dataset.buyCard, price = CARDS[id].cost.gold + 8;
+    const slot = Number(button.dataset.buyCard), id = prices.cardOffers[slot];
+    if(!id) return;
+    const price = CARDS[id].cost.gold + 8;
     if(state.gold < price) return message('金幣不足。', true);
-    state.gold -= price; state.hand.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), type:id });
+    state.gold -= price; state.hand.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()), type:id });
+    prices.cardOffers[slot] = null;
     render(); message(`已購買 ${CARDS[id].name} 卡牌。`, false, true);
   }));
+  content.querySelector('[data-refresh-card-shop]')?.addEventListener('click', () => {
+    if(refreshCardShop()){
+      render();
+      message(`商店商品已刷新；下次刷新需要 ${prices.cardRefreshCost} ◈。`, false, true);
+    }
+  });
   content.querySelectorAll('[data-trade]').forEach(button => button.addEventListener('click', () => {
     const action = button.dataset.trade;
     if(action === 'sell'){ state.storedFood -= 5; state.gold += prices.foodSell; prices.foodSell = Math.min(12, prices.foodSell + 1); prices.foodBuy = Math.max(prices.foodSell + 2, prices.foodBuy - 1); }
@@ -538,7 +551,7 @@ function startGame(){
     culturePoints: 0, unlockedCultures: initialCultures,
     activeMissions: [],
     board:startingBoard, hand:[], deck:[], 
-    shop: [], tradePrices:{ foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 } },
+    shop: [], tradePrices:{ foodBuy:7, foodSell:4, stockPrice:12, stockHistory:[12], shares:{ city:0 }, cardRefreshCost:5, cardOffers:[] },
 	mapSeed,
     selected:null, log:[],
     selectedWonder:null,
@@ -553,6 +566,7 @@ function startGame(){
   // 任務的 baseline 取自 state.board，必須在新 state 設定完成之後才產生
   state.activeMissions = getRandomMissions(3);
   state.shop = makeShop();
+  state.tradePrices.cardOffers = makeCardOffers();
   
   for(let i=0;i<5;i++) state.hand.push(drawFromDeck());
 

@@ -1,7 +1,7 @@
 // ===== 版本（集中管理）=====
 // VERSION      遊戲顯示版本，只需改這一處（標題、畫面左上角、頁尾都會自動更新）
 // 存檔不跨版本：存檔只有在 VERSION 與寫入時完全相同才讀得進來（見 save.js），所以不需要另外維護存檔格式版本。
-export const VERSION = '0.16.0';
+export const VERSION = '0.16.1';
 export const SAVE_KEY = 'cardCitySave';
 
 export const SIZE = 12;

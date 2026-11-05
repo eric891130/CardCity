@@ -58,6 +58,12 @@ function validateSaveData(data) {
   if(s.shop !== undefined && (!Array.isArray(s.shop) || s.shop.some(item => !item || !SHOP_ITEMS.some(shopItem => shopItem.id === item.id)))) {
     return '存檔格式不正確：商店資料無效。';
   }
+  if(s.tradePrices?.cardOffers !== undefined && (!Array.isArray(s.tradePrices.cardOffers) || s.tradePrices.cardOffers.length !== 5 || s.tradePrices.cardOffers.some(id => id !== null && (!Object.hasOwn(CARDS, id) || CARDS[id].rarity === 'wonder')))) {
+    return '存檔格式不正確：卡牌商店商品無效。';
+  }
+  if(s.tradePrices?.cardRefreshCost !== undefined && (!Number.isFinite(s.tradePrices.cardRefreshCost) || s.tradePrices.cardRefreshCost < 5)) {
+    return '存檔格式不正確：卡牌商店刷新費用無效。';
+  }
   return null;
 }
 
